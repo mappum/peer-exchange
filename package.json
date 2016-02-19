@@ -1,0 +1,27 @@
+{
+  "name": "peer-exchange",
+  "version": "0.0.0",
+  "description": "Decentralized peer discovery and signaling",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "p2p",
+    "peer",
+    "dicovery",
+    "exchange",
+    "seed",
+    "bootstrap",
+    "signal",
+    "hub"
+  ],
+  "author": "Matt Bell <mappum@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "get-browser-rtc": "^1.0.2",
+    "multiplex": "^6.6.1",
+    "simple-peer": "^6.0.1",
+    "websocket-stream": "^3.1.0"
+  }
+}
