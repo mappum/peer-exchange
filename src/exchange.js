@@ -4,6 +4,7 @@ var getBrowserRTC = require('get-browser-rtc')
 var Peer = require('./peer.js')
 var transports = require('./transports.js')
 
+module.exports = Exchange
 function Exchange (id, opts) {
   if (!id || typeof id !== 'string') {
     throw new Error('A network id must be specified')
@@ -35,7 +36,8 @@ Exchange.prototype.getNewPeer = function (cb) {
   if (this.peers.length === 0) {
     return cb(new Error('Not connected to any peers. Connect to some seeds manually.'))
   }
-  // TODO
+  var peer = this.peers[Math.floor(Math.random() * this.peers.length)]
+  peer.getNewPeer(cb)
 }
 
 Exchange.prototype.connect = function (transportId, address, cb) {
@@ -43,16 +45,21 @@ Exchange.prototype.connect = function (transportId, address, cb) {
   if (!this._transports[transportId]) {
     return cb(new Error('Transport "' + transportId + '" not found'))
   }
-  var connect = this._transports[transportId]
+  var connect = this._transports[transportId].connect
   connect(address, null, (err, socket) => {
     if (err) return cb(err)
-    var peer = new Peer(socket, { accepts: this._accepts })
-    // TODO: wait for peer handshake, then call cb
+    var peer = this._createPeer(socket)
+    peer.on('ready', () => cb(null, peer))
   })
 }
 
-Exchange.prototype._getLocalAddresses = function (cb) {
-  // TODO: get all local addresses across all peers
+Exchange.prototype._createPeer = function (socket) {
+  var peer = new Peer(socket, this.id, { accepts: this._accepts })
+  peer.on('error', (err) => {
+    this.emit('peerError', err, peer)
+    this.removePeer(peer)
+  })
+  return peer
 }
 
 Exchange.prototype.accept = function (transportId, opts) {
@@ -78,9 +85,28 @@ Exchange.prototype.accept = function (transportId, opts) {
 
 Exchange.prototype.unaccept = function (transport) {
   for (var peer of this.peers) {
-    peer.unaccept(transport)
+    peer.sendUnaccept(transport)
   }
   var unaccept = this._accepts[transport].unaccept
   delete this._accepts[transport]
   unaccept()
+}
+
+Exchange.prototype.removePeer = function (peer) {
+  peer.destroy()
+  for (var i = 0; i < this.peers.length; i++) {
+    if (this.peers[i] === peer) {
+      this.peers.splice(i, 1)
+      return true
+    }
+  }
+  return false
+}
+
+Exchange.prototype._error = function (err) {
+  this.emit('error', err)
+}
+
+Exchange.prototype._getLocalAddresses = function (cb) {
+  // TODO: get all local addresses across all peers
 }
