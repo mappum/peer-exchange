@@ -100,7 +100,9 @@ Peer.prototype._onHello = function (message) {
   }
   this._receivedHello = true
   for (var transportId in message.accepts) {
-    this._exchange._acceptPeers[transportId].push(this)
+    if (this._exchange._acceptPeers[transportId]) {
+      this._exchange._acceptPeers[transportId].push(this)
+    }
   }
   this._transports = message.transports
   // TODO: get addresses from peer
