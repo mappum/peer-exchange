@@ -1,35 +1,38 @@
+'use strict'
+
 var EventEmitter = require('events')
 var util = require('util')
 var duplexify = require('duplexify').obj
 var mux = require('multiplex')
 var ndjson = require('ndjson')
+var hat = require('hat')
 
 var MAGIC_HEADER = new Buffer('ed3bccf6', 'hex')
 var PROTOCOL_VERSION = 0
 
 // TODO: support arbitrary streams to mux many protocols across one peer connection
 module.exports = Peer
-function Peer (id, opts) {
-  if (!id || typeof id !== 'string') {
-    throw new Error('A network id must be specified')
-  }
+function Peer (exchange) {
   if (!(this instanceof Peer)) {
-    return new Peer(opts)
+    return new Peer(exchange)
   }
   EventEmitter.call(this)
 
-  this.id = id
-  opts = opts || {}
-  this._accepts = opts.accepts || {}
-  this._remoteAccepts = null
   this.socket = null
   this.mux = null
+  this._exchange = exchange
+  this._remoteAccepts = null
   this._exchangeChannel = null
   this._dataChannel = null
   this._receivedHello = false
   this._receivedHelloack = false
 
   this._error = this._error.bind(this)
+
+  this.on('ready', () => {
+    this.on('message:getPeer', this._onGetPeer.bind(this))
+    this.on('message:incoming', this._onIncoming.bind(this))
+  })
 }
 util.inherits(Peer, EventEmitter)
 
@@ -71,6 +74,23 @@ Peer.prototype._onHeader = function (data) {
   this._sendHello()
 }
 
+Peer.prototype._sendHello = function () {
+  var accepts = {}
+  for (var transportId in this._exchange._accepts) {
+    accepts[transportId] = this._exchange._accepts[transportId].opts
+  }
+
+  this._exchangeChannel.write({
+    command: 'hello',
+    id: this._exchange.id,
+    version: PROTOCOL_VERSION,
+    accepts,
+    transports: Object.keys(this._exchange._transports),
+    senderAddresses: this._exchange._localAddresses,
+    receiverAddress: this.socket.remoteAddress
+  })
+}
+
 Peer.prototype._onHello = function (message) {
   if (this._receivedHello) {
     return this._error(new Error('Received a duplicate "hello" message'))
@@ -78,18 +98,24 @@ Peer.prototype._onHello = function (message) {
   if (typeof message !== 'object') {
     return this._error(new Error('Invalid hello message'))
   }
-  if (message.id !== this.id) {
+  if (message.id !== this._exchange.id) {
     return this._error(new Error('Peer\'s network id ("' + message.id + '") ' +
-      'is different than expected ("' + this.id + '")'))
+      'is different than ours ("' + this._exchange.id + '")'))
   }
   if (message.version !== PROTOCOL_VERSION) {
     return this._error(new Error('Peer is using a different protocol version ' +
       '(theirs: ' + message.version + ', ours: ' + PROTOCOL_VERSION + ')'))
   }
-  this._remoteAccepts = message.accepts
   this._receivedHello = true
+  for (var transportId in message.accepts) {
+    this._exchange._acceptPeers[transportId].push(this)
+  }
+  this._transports = message.transports
+  this._remoteAddresses = message.senderAddresses
+
   this._exchangeChannel.write({ command: 'helloack' })
   // TODO: connect to peer via other transports to verify accepts are valid
+  // TODO?: authenticate each reachable address, so nodes can't spam someone else's address
   this._maybeReady()
 }
 
@@ -105,20 +131,6 @@ Peer.prototype._maybeReady = function () {
   if (this._receivedHello && this._receivedHelloack) {
     this.emit('ready')
   }
-}
-
-Peer.prototype._sendHello = function () {
-  var accepts = {}
-  for (var transportId in this._accepts) {
-    accepts[transportId] = this._accepts[transportId].opts
-  }
-
-  this._exchangeChannel.write({
-    command: 'hello',
-    id: this.id,
-    version: PROTOCOL_VERSION,
-    accepts
-  })
 }
 
 Peer.prototype.createObjectChannel = function (id, opts) {
@@ -142,9 +154,111 @@ Peer.prototype.createChannel = function (id, opts) {
 }
 
 Peer.prototype.getNewPeer = function (cb) {
+  var reqId = hat(32)
+  this._exchangeChannel.once(reqId, (message) => {
+    var transport = this._exchange._transports[message.transport]
+    var relay = this.createObjectChannel('relay:' + message.nonce)
+    // try connecting to each address until we find one that works
+    var addresses = message.addresses || [ null ]
+    var i = 0
+    var next = () => {
+      if (i >= addresses.length) {
+        return cb(new Error('Could not connect to peer'))
+      }
+      var address = addresses[i]
+      i++
+      transport.connect(address, relay, (err, socket) => {
+        if (err) return next()
+        this._exchange._onConnection(socket, true)
+      })
+    }
+  })
+  this._exchangeChannel.write({
+    command: 'getPeer',
+    reqId
+  })
+}
 
+Peer.prototype._onGetPeer = function (message) {
+  // select from our peers who are accepting connections
+  var exchange = this._exchange
+  var acceptPeers = {}
+  for (let transportId in exchange._acceptPeers) {
+    if (this._transports.indexOf(transportId) !== -1) {
+      acceptPeers[transportId] = exchange._acceptPeers[transportId].slice(0)
+    }
+    // ensure we don't send the requesting peer
+    var selfIndex = acceptPeers[transportId].indexOf(this)
+    if (selfIndex !== -1) acceptPeers[transportId].splice(selfIndex, 1)
+    if (acceptPeers[transportId].length === 0) delete acceptPeers[transportId]
+  }
+  var transports = Object.keys(acceptPeers)
+  if (transports.length === 0) {
+    // if we have no accepting peers for any compatible transports,
+    // send null response
+    return this._exchangeChannel.write({
+      command: message.reqId,
+      transport: null,
+      opts: null,
+      addresses: null
+    })
+  }
+  // select random transport that has valid accepting peers
+  var transportId = getRandom(transports)
+  var peers = acceptPeers[transportId]
+  // select random peer
+  var peer = getRandom(peers)
+  var nonce = hat()
+
+  if (this._transports[transportId].onIncoming) {
+    // set up a relay stream between the requesting peer and selected peer, to
+    // facilitate signaling, NAT traversal, etc
+    this._createRelay(peer, transportId, nonce)
+
+    // notify selected peer about incoming connection/relay
+    peer._exchangeChannel.write({
+      command: 'incoming',
+      nonce,
+      transport: transportId
+    })
+  }
+
+  this._exchangeChannel.write({
+    command: message.reqId,
+    transport: transportId,
+    opts: peer._remoteAccepts[transportId],
+    addresses: peer._remoteAddresses,
+    nonce
+  })
+}
+
+Peer.prototype._createRelay = function (destinationPeer, transportId, nonce) {
+  var stream1 = this.createChannel('relay:' + nonce)
+  var stream2 = destinationPeer.createChannel('relay:' + nonce)
+  stream1.pipe(stream2).pipe(stream1)
+
+  var closeRelay = () => {
+    stream1.end()
+    stream2.end()
+  }
+  this.once('close', closeRelay)
+  destinationPeer.once('close', closeRelay)
+  setTimeout(closeRelay, 30 * 1000) // close relay after 30s
+}
+
+Peer.prototype._onIncoming = function (message) {
+  var transport = this._exchange._transports[message.transport]
+  var relay = this.createObjectChannel('relay:' + message.nonce)
+  transport.onIncoming(relay, (err, socket) => {
+    if (err) return this._error(err)
+    this._exchange._onConnection(socket)
+  })
 }
 
 Peer.prototype.destroy = function () {
   this.socket.destroy()
+}
+
+function getRandom (array) {
+  return array[Math.floor(Math.random() * array.length)]
 }
