@@ -72,7 +72,6 @@ Exchange.prototype._createPeer = function (socket, outgoing) {
   var peer = new Peer(this)
   peer.incoming = !outgoing
   peer.once('error', (err) => {
-    console.log(err)
     this.emit('peerError', err, peer)
     this.removePeer(peer)
   })
@@ -120,7 +119,7 @@ Exchange.prototype.unaccept = function (transport) {
   }
   var unaccept = this._accepts[transport].unaccept
   delete this._accepts[transport]
-  unaccept()
+  if (unaccept) unaccept()
 }
 
 Exchange.prototype.addPeer = function (peer) {
@@ -138,6 +137,12 @@ Exchange.prototype.removePeer = function (peer) {
     }
   }
   return remove(this.peers, peer)
+}
+
+Exchange.prototype.close = function () {
+  for (var peer of this.peers) {
+    peer.destroy()
+  }
 }
 
 Exchange.prototype._error = function (err) {

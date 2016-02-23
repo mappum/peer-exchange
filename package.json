@@ -4,7 +4,7 @@
   "description": "Decentralized peer discovery and signaling",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "standard src test index.js && tap --cov test/*.js"
   },
   "keywords": [
     "p2p",
@@ -26,5 +26,10 @@
     "ndjson": "^1.4.3",
     "simple-peer": "^6.0.1",
     "websocket-stream": "^3.1.0"
+  },
+  "devDependencies": {
+    "electron-webrtc": "0.0.3",
+    "standard": "^6.0.7",
+    "tap": "^5.7.0"
   }
 }

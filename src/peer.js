@@ -239,7 +239,7 @@ Peer.prototype._createRelay = function (destinationPeer, transportId, nonce) {
   }
   this.once('close', closeRelay)
   destinationPeer.once('close', closeRelay)
-  setTimeout(closeRelay, 30 * 1000) // close relay after 30s
+  this._relayTimeout = setTimeout(closeRelay, 30 * 1000) // close relay after 30s
 }
 
 Peer.prototype._onIncoming = function (message) {
@@ -251,8 +251,17 @@ Peer.prototype._onIncoming = function (message) {
   })
 }
 
+Peer.prototype.sendAccept = function () {
+  // TODO
+}
+
+Peer.prototype.sendUnaccept = function () {
+  // TODO
+}
+
 Peer.prototype.destroy = function () {
   this.socket.destroy()
+  clearTimeout(this._relayTimeout)
 }
 
 function getRandom (array) {
