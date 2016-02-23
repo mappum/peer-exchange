@@ -181,10 +181,9 @@ Peer.prototype._onGetPeer = function (message) {
   var exchange = this._exchange
   var acceptPeers = {}
   for (let transportId in exchange._acceptPeers) {
-    if (this._transports.indexOf(transportId) !== -1) {
-      acceptPeers[transportId] = exchange._acceptPeers[transportId].slice(0)
-    }
-    // ensure we don't send the requesting peer
+    if (this._transports.indexOf(transportId) === -1) continue
+    acceptPeers[transportId] = exchange._acceptPeers[transportId].slice(0)
+    // ensure we don't send the requesting peer to itself
     var selfIndex = acceptPeers[transportId].indexOf(this)
     if (selfIndex !== -1) acceptPeers[transportId].splice(selfIndex, 1)
     if (acceptPeers[transportId].length === 0) delete acceptPeers[transportId]
