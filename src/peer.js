@@ -21,17 +21,18 @@ function Peer (exchange) {
   this.socket = null
   this.mux = null
   this._exchange = exchange
-  this._remoteAccepts = null
+  this._accepts = null
   this._exchangeChannel = null
   this._dataChannel = null
   this._receivedHello = false
   this._receivedHelloack = false
+  this.ready = false
 
   this._error = this._error.bind(this)
 
   this.on('ready', () => {
-    this.on('message:getPeer', this._onGetPeer.bind(this))
-    this.on('message:incoming', this._onIncoming.bind(this))
+    this._exchangeChannel.on('message:getPeer', this._onGetPeer.bind(this))
+    this._exchangeChannel.on('message:incoming', this._onIncoming.bind(this))
   })
 }
 util.inherits(Peer, EventEmitter)
@@ -77,7 +78,7 @@ Peer.prototype._onHeader = function (data) {
 Peer.prototype._sendHello = function () {
   var accepts = {}
   for (var transportId in this._exchange._accepts) {
-    accepts[transportId] = this._exchange._accepts[transportId].opts
+    accepts[transportId] = this._exchange._accepts[transportId].opts || true
   }
 
   this._exchangeChannel.write({
@@ -111,7 +112,9 @@ Peer.prototype._onHello = function (message) {
     this._exchange._acceptPeers[transportId].push(this)
   }
   this._transports = message.transports
-  this._remoteAddresses = message.senderAddresses
+  // TODO: get addresses from peer
+  this._remoteAddress = getRemoteAddress(this.socket)
+  this._accepts = message.accepts
 
   this._exchangeChannel.write({ command: 'helloack' })
   // TODO: connect to peer via other transports to verify accepts are valid
@@ -129,8 +132,14 @@ Peer.prototype._onHelloack = function (message) {
 
 Peer.prototype._maybeReady = function () {
   if (this._receivedHello && this._receivedHelloack) {
+    this.ready = true
     this.emit('ready')
   }
+}
+
+Peer.prototype.onReady = function (cb) {
+  if (this.ready) return cb()
+  this.once('ready', cb)
 }
 
 Peer.prototype.createObjectChannel = function (id, opts) {
@@ -154,24 +163,19 @@ Peer.prototype.createChannel = function (id, opts) {
 }
 
 Peer.prototype.getNewPeer = function (cb) {
-  var reqId = hat(32)
-  this._exchangeChannel.once(reqId, (message) => {
+  var reqId = hat()
+  this._exchangeChannel.once(`message:${reqId}`, (message) => {
+    if (!message.transport || !message.address) {
+      return cb(new Error('Peer does not have any peers to exchange'))
+    }
     var transport = this._exchange._transports[message.transport]
     var relay = this.createObjectChannel('relay:' + message.nonce)
-    // try connecting to each address until we find one that works
-    var addresses = message.addresses || [ null ]
-    var i = 0
-    var next = () => {
-      if (i >= addresses.length) {
-        return cb(new Error('Could not connect to peer'))
-      }
-      var address = addresses[i]
-      i++
-      transport.connect(address, relay, (err, socket) => {
-        if (err) return next()
-        this._exchange._onConnection(socket, true)
-      })
-    }
+    // TODO: support multiple addresses (so we can try to find best one)
+    transport.connect(message.address, message.opts, relay, (err, socket) => {
+      if (err) return cb(err)
+      var peer = this._exchange._onConnection(socket, true)
+      peer.onReady(() => cb(null, peer))
+    })
   })
   this._exchangeChannel.write({
     command: 'getPeer',
@@ -200,7 +204,7 @@ Peer.prototype._onGetPeer = function (message) {
       command: message.reqId,
       transport: null,
       opts: null,
-      addresses: null
+      address: null
     })
   }
   // select random transport that has valid accepting peers
@@ -210,7 +214,7 @@ Peer.prototype._onGetPeer = function (message) {
   var peer = getRandom(peers)
   var nonce = hat()
 
-  if (this._transports[transportId].onIncoming) {
+  if (this._exchange._transports[transportId].onIncoming) {
     // set up a relay stream between the requesting peer and selected peer, to
     // facilitate signaling, NAT traversal, etc
     this._createRelay(peer, transportId, nonce)
@@ -226,8 +230,8 @@ Peer.prototype._onGetPeer = function (message) {
   this._exchangeChannel.write({
     command: message.reqId,
     transport: transportId,
-    opts: peer._remoteAccepts[transportId],
-    addresses: peer._remoteAddresses,
+    opts: peer._accepts[transportId],
+    address: peer._remoteAddress,
     nonce
   })
 }
@@ -261,4 +265,17 @@ Peer.prototype.destroy = function () {
 
 function getRandom (array) {
   return array[Math.floor(Math.random() * array.length)]
+}
+
+// HACK: recursively looks for socket property that has a remote address
+function getRemoteAddress (socket) {
+  if (socket.remoteAddress) return socket.remoteAddress
+  if (socket.socket) {
+    let address = getRemoteAddress(socket.socket)
+    if (address) return address
+  }
+  if (socket._socket) {
+    let address = getRemoteAddress(socket._socket)
+    if (address) return address
+  }
 }

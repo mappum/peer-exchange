@@ -1,3 +1,5 @@
+'use strict'
+
 var EventEmitter = require('events')
 var util = require('util')
 var getBrowserRTC = require('get-browser-rtc')
@@ -14,14 +16,13 @@ function Exchange (id, opts) {
   }
   EventEmitter.call(this)
 
-  opts = opts || {}
-  this._wrtc = opts.wrtc || getBrowserRTC()
+  var wrtc = opts.wrtc || getBrowserRTC()
 
   this._transports = opts.transports
   if (!opts.transports) {
     this._transports = { websocket: transports.websocket }
-    if (this._wrtc) {
-      this._transports.webrtc = transports.webrtc({ wrtc: this._wrtc })
+    if (wrtc) {
+      this._transports.webrtc = transports.webrtc({ wrtc })
     }
     // TODO: add TCP as a default transport for Node.js clients
   }
@@ -46,23 +47,23 @@ Exchange.prototype.getNewPeer = function (cb) {
   peer.getNewPeer(cb)
 }
 
-Exchange.prototype.connect = function (transportId, address, cb) {
+Exchange.prototype.connect = function (transportId, address, opts, cb) {
   transportId = transportId.toLowerCase()
   if (!this._transports[transportId]) {
-    return cb(new Error('Transport "' + transportId + '" not found'))
+    return cb(new Error(`Transport "${transportId}" not found`))
   }
   var connect = this._transports[transportId].connect
-  connect(address, null, (err, socket) => {
+  connect(address, opts, null, (err, socket) => {
     if (err) return cb(err)
-    var peer = this._createPeer(socket, true)
-    peer.on('ready', () => cb(null, peer))
+    var peer = this._onConnection(socket, true)
+    peer.onReady(() => cb(null, peer))
   })
 }
 
 Exchange.prototype._createPeer = function (socket, outgoing) {
   var peer = new Peer(this)
   peer.incoming = !outgoing
-  peer.on('error', (err) => {
+  peer.once('error', (err) => {
     this.emit('peerError', err, peer)
     this.removePeer(peer)
   })
@@ -73,10 +74,10 @@ Exchange.prototype._createPeer = function (socket, outgoing) {
 Exchange.prototype.accept = function (transportId, opts) {
   transportId = transportId.toLowerCase()
   if (!this._transports[transportId]) {
-    throw new Error('Transport "' + transportId + '" not found')
+    throw new Error(`Transport "${transportId}" not found`)
   }
   if (this._accepts[transportId]) {
-    throw new Error('Already accepting with "' + transportId + '" transport')
+    throw new Error(`Already accepting with "${transportId}" transport`)
   }
   var transport = this._transports[transportId]
   if (transport.accept) {
@@ -94,6 +95,7 @@ Exchange.prototype.accept = function (transportId, opts) {
 Exchange.prototype._onConnection = function (socket, outgoing) {
   var peer = this._createPeer(socket, outgoing)
   this.addPeer(peer)
+  return peer
 }
 
 Exchange.prototype.unaccept = function (transport) {
@@ -106,8 +108,10 @@ Exchange.prototype.unaccept = function (transport) {
 }
 
 Exchange.prototype.addPeer = function (peer) {
-  this.peers.push(peer)
-  this.emit('peer', peer)
+  peer.onReady(() => {
+    this.peers.push(peer)
+    this.emit('peer', peer)
+  })
 }
 
 Exchange.prototype.removePeer = function (peer) {

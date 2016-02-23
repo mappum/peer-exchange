@@ -15,7 +15,7 @@ function webrtc (opts) {
     peer.on('connect', () => cb(null, peer))
   }
 
-  function connect (address, relay, cb) {
+  function connect (address, opts, relay, cb) {
     createPeer({ initiator: true }, relay, cb)
   }
 
@@ -27,8 +27,8 @@ function webrtc (opts) {
 }
 
 var websocket = {
-  connect: function (address, relay, cb) {
-    var ws = Websocket(address)
+  connect: function (address, opts, relay, cb) {
+    var ws = Websocket(`ws://${address}:${opts.port}`)
     ws.on('error', (err) => cb(err))
     cb(null, ws)
   },
