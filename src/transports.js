@@ -31,7 +31,8 @@ function webrtc (opts) {
 
 var websocket = {
   connect: function (address, opts, relay, cb) {
-    var ws = Websocket(`ws://${address}:${opts.port}`)
+    var protocol = opts.secure ? 'wss' : 'ws'
+    var ws = Websocket(`${protocol}://${address}:${opts.port}`)
     ws.on('error', (err) => cb(err))
     cb(null, ws)
   },
