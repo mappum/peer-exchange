@@ -6,9 +6,7 @@
 
 **Decentralized peer discovery and signaling**
 
-`peer-exchange` provides functionality similar to [`signalhub`](https://github.com/mafintosh/signalhub), where P2P nodes can get addresses of new peers and establish connections by relaying signaling data. However, this module differs by getting all nodes to provide this "hub" service, rather than a few centralized servers. This makes the network decentralized, scalable, and robust.
-
-Note that `signalhub` may still be better for some applications, for instance when finding peers in small swarms where peers are hard to find (e.g. torrent swarms). In the future, a DHT could help with finding initial peers for this sort of use case.
+`peer-exchange` is a decentralized protocol for peer exchange and signaling. It reduces dependency on centralized peer exchange hubs, which may be useful in some applications.
 
 ## Usage
 
@@ -194,3 +192,9 @@ Emitted when an error occurs.
 Some efforts were made to make this module DoS-resistant, but there are probably still some weaknesses.
 
 It is recommended to use an authenticated transport (e.g. 'wss') for initial nodes to prevent MITM (attackers would be able to control all your peers, which can be very bad in some applications).
+
+## Comparison with `signalhub`
+
+This module provides functionality similar to [`signalhub`](https://github.com/mafintosh/signalhub), where P2P nodes can get addresses of new peers and establish connections by relaying signaling data. However, this module differs by getting all nodes to provide this "hub" service, rather than a few centralized servers. It also only exchanges currently-connected peer addresses rather than providing general-purpose broadcasting.
+
+Note that `signalhub` may be better suited for some applications, for instance when connecting to peers in small swarms when no peer addresses are initially known (e.g. torrent swarms). In the future, a DHT could help with finding initial peers for this sort of use case.
