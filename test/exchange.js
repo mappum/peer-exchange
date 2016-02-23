@@ -95,6 +95,8 @@ test('connect exchanges across transports', (t) => {
     }
   })
 
+  var p1
+  var p2
   t.test('getNewPeer over webrtc (e3 -> e2)', (t) => {
     var e2EmittedPeer = false
     var e3EmittedPeer = false
@@ -104,6 +106,7 @@ test('connect exchanges across transports', (t) => {
       t.equal(peer.incoming, true, 'peer is incoming')
       t.equal(peer.ready, true, 'peer is ready')
       e2EmittedPeer = true
+      p1 = peer
       maybeEnd()
     })
     e3.once('peer', (peer) => {
@@ -111,6 +114,7 @@ test('connect exchanges across transports', (t) => {
       t.equal(peer.incoming, false, 'peer is outgoing')
       t.equal(peer.ready, true, 'peer is ready')
       e3EmittedPeer = true
+      p2 = peer
       maybeEnd()
     })
     e3.getNewPeer((err, peer) => {
@@ -128,6 +132,15 @@ test('connect exchanges across transports', (t) => {
         t.end()
       }
     }
+  })
+
+  t.test('write data over webrtc (e3 -> e2)', (t) => {
+    p1.once('data', (data) => {
+      t.ok(data, 'received data')
+      t.equal(data.toString(), 'hello peer', 'data is correct')
+      t.end()
+    })
+    p2.write(new Buffer('hello peer'))
   })
 
   t.test('cleanup', (t) => {
