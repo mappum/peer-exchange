@@ -60,7 +60,7 @@ Peer.prototype._error = function (err) {
   this.emit('error', err)
 }
 
-Peer.prototype.connect = function (socket) {
+Peer.prototype._connect = function (socket) {
   if (!socket || !socket.readable || !socket.writable) {
     throw new Error('Must specify a connected duplex stream socket')
   }
@@ -72,10 +72,10 @@ Peer.prototype.connect = function (socket) {
   this.mux.on('error', this._error)
   this.mux.pipe(this.socket).pipe(this.mux)
 
-  this._exchangeChannel = this.createObjectChannel('pxp')
+  this._exchangeChannel = this._createObjectChannel('pxp')
   this._exchangeChannel.on('data', (data) => this._exchangeChannel.emit('message:' + data.command, data))
 
-  this._dataChannel = this.createChannel('data')
+  this._dataChannel = this._createChannel('data')
   this._dataChannel.on('data', (data) => {
     if (!this.push(data)) {
       this._dataChannel.pause()
@@ -152,13 +152,13 @@ Peer.prototype._maybeReady = function () {
   }
 }
 
-Peer.prototype.onReady = function (cb) {
+Peer.prototype._onReady = function (cb) {
   if (this.ready) return cb()
   this.once('ready', cb)
 }
 
-Peer.prototype.createObjectChannel = function (id, opts) {
-  var muxStream = this.createChannel(id, opts)
+Peer.prototype._createObjectChannel = function (id, opts) {
+  var muxStream = this._createChannel(id, opts)
 
   var parse = ndjson.parse()
   muxStream.pipe(parse)
@@ -171,7 +171,7 @@ Peer.prototype.createObjectChannel = function (id, opts) {
   return channel
 }
 
-Peer.prototype.createChannel = function (id, opts) {
+Peer.prototype._createChannel = function (id, opts) {
   var channel = this.mux.createSharedStream(id, opts)
   channel.on('error', this._error)
   return channel
@@ -184,12 +184,12 @@ Peer.prototype.getNewPeer = function (cb) {
       return cb(new Error('Peer does not have any peers to exchange'))
     }
     var transport = this._exchange._transports[message.transport]
-    var relay = this.createObjectChannel('relay:' + message.nonce)
+    var relay = this._createObjectChannel('relay:' + message.nonce)
     // TODO: support multiple addresses (so we can try to find best one)
     transport.connect(message.address, message.opts, relay, (err, socket) => {
       if (err) return cb(err)
       var peer = this._exchange._onConnection(socket, true)
-      peer.onReady(() => cb(null, peer))
+      peer._onReady(() => cb(null, peer))
     })
   })
   this._exchangeChannel.write({
@@ -251,8 +251,8 @@ Peer.prototype._onGetPeer = function (message) {
 }
 
 Peer.prototype._createRelay = function (destinationPeer, transportId, nonce) {
-  var stream1 = this.createChannel('relay:' + nonce)
-  var stream2 = destinationPeer.createChannel('relay:' + nonce)
+  var stream1 = this._createChannel('relay:' + nonce)
+  var stream2 = destinationPeer._createChannel('relay:' + nonce)
   stream1.pipe(stream2).pipe(stream1)
 
   var closeRelay = () => {
@@ -266,18 +266,18 @@ Peer.prototype._createRelay = function (destinationPeer, transportId, nonce) {
 
 Peer.prototype._onIncoming = function (message) {
   var transport = this._exchange._transports[message.transport]
-  var relay = this.createObjectChannel('relay:' + message.nonce)
+  var relay = this._createObjectChannel('relay:' + message.nonce)
   transport.onIncoming(relay, (err, socket) => {
     if (err) return this._error(err)
     this._exchange._onConnection(socket)
   })
 }
 
-Peer.prototype.sendAccept = function () {
+Peer.prototype._sendAccept = function () {
   // TODO
 }
 
-Peer.prototype.sendUnaccept = function () {
+Peer.prototype._sendUnaccept = function () {
   // TODO
 }
 

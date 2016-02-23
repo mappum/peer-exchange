@@ -67,7 +67,7 @@ Exchange.prototype.connect = function (transportId, address, opts, cb) {
     if (err) return cb(err)
     socket.transport = transportId
     var peer = this._onConnection(socket, true)
-    peer.onReady(() => cb(null, peer))
+    peer._onReady(() => cb(null, peer))
   })
 }
 
@@ -78,7 +78,7 @@ Exchange.prototype._createPeer = function (socket, outgoing) {
     this.emit('peerError', err, peer)
     this.removePeer(peer)
   })
-  peer.connect(socket)
+  peer._connect(socket)
   return peer
 }
 
@@ -95,7 +95,7 @@ Exchange.prototype.accept = function (transportId, opts, cb) {
   var register = (unaccept) => {
     this._accepts[transportId] = { opts, unaccept }
     for (var peer of this.peers) {
-      peer.sendAccept(transportId, opts)
+      peer._sendAccept(transportId, opts)
     }
     cb(null)
   }
@@ -124,7 +124,7 @@ Exchange.prototype._onConnection = function (socket, outgoing) {
 
 Exchange.prototype.unaccept = function (transport) {
   for (var peer of this.peers) {
-    peer.sendUnaccept(transport)
+    peer._sendUnaccept(transport)
   }
   var unaccept = this._accepts[transport].unaccept
   delete this._accepts[transport]
@@ -132,7 +132,7 @@ Exchange.prototype.unaccept = function (transport) {
 }
 
 Exchange.prototype.addPeer = function (peer) {
-  peer.onReady(() => {
+  peer._onReady(() => {
     this.peers.push(peer)
     this.emit('peer', peer)
   })
@@ -158,10 +158,6 @@ Exchange.prototype.close = function (cb) {
 
 Exchange.prototype._error = function (err) {
   this.emit('error', err)
-}
-
-Exchange.prototype._getLocalAddresses = function (cb) {
-  // TODO: get all local addresses across all peers
 }
 
 function remove (array, object) {
