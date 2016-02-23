@@ -4,7 +4,11 @@
   "description": "Decentralized peer discovery and signaling",
   "main": "index.js",
   "scripts": {
-    "test": "standard src test index.js && tap --cov test/*.js"
+    "test": "standard src test index.js && tap --cov test/*.js",
+    "build": "rm -rf lib && babel --presets es2015 src -d lib",
+    "source": "rm -rf lib && ln -s src lib",
+    "prepublish": "npm run build",
+    "publish": "npm run source"
   },
   "keywords": [
     "p2p",
@@ -28,6 +32,8 @@
     "websocket-stream": "^3.1.0"
   },
   "devDependencies": {
+    "babel-cli": "^6.5.1",
+    "babel-preset-es2015": "^6.5.0",
     "electron-webrtc": "0.0.3",
     "standard": "^6.0.7",
     "tap": "^5.7.0"
