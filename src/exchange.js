@@ -148,10 +148,12 @@ Exchange.prototype.removePeer = function (peer) {
   return remove(this.peers, peer)
 }
 
-Exchange.prototype.close = function () {
+Exchange.prototype.close = function (cb) {
+  cb = cb || (() => {})
   for (var peer of this.peers) {
     peer.destroy()
   }
+  cb(null)
 }
 
 Exchange.prototype._error = function (err) {
