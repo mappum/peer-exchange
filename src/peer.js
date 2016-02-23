@@ -7,7 +7,6 @@ var mux = require('multiplex')
 var ndjson = require('ndjson')
 var hat = require('hat')
 
-var MAGIC_HEADER = new Buffer('ed3bccf6', 'hex')
 var PROTOCOL_VERSION = 0
 
 // TODO: support arbitrary streams to mux many protocols across one peer connection
@@ -49,14 +48,6 @@ Peer.prototype.connect = function (socket) {
   this.socket = socket
   this.socket.on('error', this._error)
   this.socket.on('close', () => this.emit('close'))
-  this.socket.once('data', this._onHeader.bind(this))
-  this.socket.write(MAGIC_HEADER)
-}
-
-Peer.prototype._onHeader = function (data) {
-  if (data.compare(MAGIC_HEADER) !== 0) {
-    return this._error(new Error('Invalid magic bytes'))
-  }
 
   this.mux = mux()
   this.mux.on('error', this._error)
@@ -81,6 +72,8 @@ Peer.prototype._sendHello = function () {
     accepts[transportId] = this._exchange._accepts[transportId].opts || true
   }
 
+  console.log('sendHello')
+
   this._exchangeChannel.write({
     command: 'hello',
     id: this._exchange.id,
@@ -93,6 +86,7 @@ Peer.prototype._sendHello = function () {
 }
 
 Peer.prototype._onHello = function (message) {
+  console.log('onHello', message)
   if (this._receivedHello) {
     return this._error(new Error('Received a duplicate "hello" message'))
   }
