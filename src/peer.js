@@ -1,6 +1,6 @@
 'use strict'
 
-var EventEmitter = require('events')
+var DuplexStream = require('stream').Duplex
 var util = require('util')
 var duplexify = require('duplexify').obj
 var mux = require('multiplex')
@@ -15,7 +15,7 @@ function Peer (exchange) {
   if (!(this instanceof Peer)) {
     return new Peer(exchange)
   }
-  EventEmitter.call(this)
+  DuplexStream.call(this)
 
   this.socket = null
   this.mux = null
@@ -34,7 +34,26 @@ function Peer (exchange) {
     this._exchangeChannel.on('message:incoming', this._onIncoming.bind(this))
   })
 }
-util.inherits(Peer, EventEmitter)
+util.inherits(Peer, DuplexStream)
+
+Peer.prototype._read = function (size) {
+  if (!this._dataChannel) {
+    throw new Error('_read called before connection was ready')
+  }
+  this._dataChannel.resume()
+}
+
+Peer.prototype._write = function (chunk, encoding, cb) {
+  if (!this._dataChannel) {
+    return cb(new Error('_write called before connection was ready'))
+  }
+  try {
+    this._dataChannel.write(chunk, encoding)
+  } catch (err) {
+    return cb(err)
+  }
+  cb()
+}
 
 Peer.prototype._error = function (err) {
   this.destroy()
@@ -57,9 +76,12 @@ Peer.prototype.connect = function (socket) {
   this._exchangeChannel.on('data', (data) => this._exchangeChannel.emit('message:' + data.command, data))
 
   this._dataChannel = this.createChannel('data')
-  this.read = this._dataChannel.read.bind(this._dataChannel)
-  this.write = this._dataChannel.write.bind(this._dataChannel)
-  this._dataChannel.on('data', (data) => this.emit('data', data))
+  this._dataChannel.on('data', (data) => {
+    if (!this.push(data)) {
+      this._dataChannel.pause()
+    }
+  })
+  this._dataChannel.on('end', () => this.push(null))
 
   this._exchangeChannel.on('message:hello', this._onHello.bind(this))
   this._exchangeChannel.on('message:helloack', this._onHelloack.bind(this))
