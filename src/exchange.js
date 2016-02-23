@@ -5,6 +5,9 @@ var util = require('util')
 var getBrowserRTC = require('get-browser-rtc')
 var Peer = require('./peer.js')
 var transports = require('./transports.js')
+try {
+  var net = require('net')
+} catch (err) {}
 
 module.exports = Exchange
 function Exchange (id, opts) {
@@ -24,7 +27,9 @@ function Exchange (id, opts) {
     if (wrtc) {
       this._transports.webrtc = transports.webrtc({ wrtc })
     }
-    // TODO: add TCP as a default transport for Node.js clients
+    if (net) {
+      this._transports.tcp = transports.tcp
+    }
   }
 
   this.id = id
@@ -67,6 +72,7 @@ Exchange.prototype._createPeer = function (socket, outgoing) {
   var peer = new Peer(this)
   peer.incoming = !outgoing
   peer.once('error', (err) => {
+    console.log(err)
     this.emit('peerError', err, peer)
     this.removePeer(peer)
   })
@@ -126,8 +132,10 @@ Exchange.prototype.addPeer = function (peer) {
 
 Exchange.prototype.removePeer = function (peer) {
   peer.destroy()
-  for (var transportId of Object.keys(peer._remoteAccepts)) {
-    remove(this._acceptPeers[transportId], peer)
+  if (peer._remoteAccepts) {
+    for (var transportId of Object.keys(peer._remoteAccepts)) {
+      remove(this._acceptPeers[transportId], peer)
+    }
   }
   return remove(this.peers, peer)
 }

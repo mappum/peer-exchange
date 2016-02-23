@@ -42,11 +42,32 @@ var websocket = {
       throw new Error('Must specify "port" option')
     }
     var server = http.createServer()
+    server.on('error', cb)
     server.listen(opts.port, () => {
-      Websocket.createServer({ server }, onConnection)
+      var wss = Websocket.createServer({ server }, onConnection)
+      wss.on('error', cb)
       cb(null, server.close.bind(server))
     })
   }
 }
 
-module.exports = { webrtc, websocket }
+var tcp = {
+  connect: function (address, opts, relay, cb) {
+    var socket = net.connect(opts.port, address, () => cb(null, socket))
+    socket.on('error', (err) => cb(err))
+  },
+
+  accept: function (opts, onConnection, cb) {
+    // TODO: option for already-created TCP server
+    if (!opts.port) {
+      throw new Error('Must specify "port" option')
+    }
+    var server = net.createServer(onConnection)
+    server.on('error', cb)
+    server.listen(opts.port, () => {
+      cb(null, server.close.bind(server))
+    })
+  }
+}
+
+module.exports = { webrtc, websocket, tcp }

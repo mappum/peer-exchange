@@ -72,8 +72,6 @@ Peer.prototype._sendHello = function () {
     accepts[transportId] = this._exchange._accepts[transportId].opts || true
   }
 
-  console.log('sendHello')
-
   this._exchangeChannel.write({
     command: 'hello',
     id: this._exchange.id,
@@ -86,7 +84,6 @@ Peer.prototype._sendHello = function () {
 }
 
 Peer.prototype._onHello = function (message) {
-  console.log('onHello', message)
   if (this._receivedHello) {
     return this._error(new Error('Received a duplicate "hello" message'))
   }
