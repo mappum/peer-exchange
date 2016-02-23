@@ -45,6 +45,7 @@ function Exchange (id, opts) {
 util.inherits(Exchange, EventEmitter)
 
 Exchange.prototype.getNewPeer = function (cb) {
+  cb = cb || ((err) => { if (err) this._error(err) })
   if (this.peers.length === 0) {
     return cb(new Error('Not connected to any peers. Connect to some seeds manually.'))
   }
@@ -53,6 +54,7 @@ Exchange.prototype.getNewPeer = function (cb) {
 }
 
 Exchange.prototype.connect = function (transportId, address, opts, cb) {
+  cb = cb || ((err) => { if (err) this._error(err) })
   transportId = transportId.toLowerCase()
   if (!this._transports[transportId]) {
     return cb(new Error(`Transport "${transportId}" not found`))
@@ -63,6 +65,7 @@ Exchange.prototype.connect = function (transportId, address, opts, cb) {
     if (called) return
     called = true
     if (err) return cb(err)
+    socket.transport = transportId
     var peer = this._onConnection(socket, true)
     peer.onReady(() => cb(null, peer))
   })
@@ -95,7 +98,11 @@ Exchange.prototype.accept = function (transportId, opts) {
     }
   }
   if (transport.accept) {
-    transport.accept(opts, this._onConnection.bind(this), (err, unaccept) => {
+    var onConnection = (socket) => {
+      socket.transport = transportId
+      this._onConnection(socket)
+    }
+    transport.accept(opts, onConnection, (err, unaccept) => {
       if (err) return this._error(err)
       if (typeof unaccept !== 'function') {
         throw new Error('Transport\'s "accept" function must return a cleanup function')
