@@ -106,7 +106,7 @@ Peer.prototype._onHello = function (message) {
   }
   this._transports = message.transports
   // TODO: get addresses from peer
-  this._remoteAddress = getRemoteAddress(this.socket)
+  this.remoteAddress = getRemoteAddress(this.socket)
   this._accepts = message.accepts
 
   this._exchangeChannel.write({ command: 'helloack' })
@@ -223,7 +223,7 @@ Peer.prototype._onGetPeer = function (message) {
     command: message.reqId,
     transport: transportId,
     opts: peer._accepts[transportId],
-    address: peer._remoteAddress,
+    address: peer.remoteAddress,
     nonce
   })
 }
