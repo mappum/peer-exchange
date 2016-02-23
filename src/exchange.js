@@ -53,7 +53,10 @@ Exchange.prototype.connect = function (transportId, address, opts, cb) {
     return cb(new Error(`Transport "${transportId}" not found`))
   }
   var connect = this._transports[transportId].connect
+  var called = false
   connect(address, opts, null, (err, socket) => {
+    if (called) return
+    called = true
     if (err) return cb(err)
     var peer = this._onConnection(socket, true)
     peer.onReady(() => cb(null, peer))
@@ -80,15 +83,22 @@ Exchange.prototype.accept = function (transportId, opts) {
     throw new Error(`Already accepting with "${transportId}" transport`)
   }
   var transport = this._transports[transportId]
-  if (transport.accept) {
-    var unaccept = transport.accept(opts, this._onConnection.bind(this))
-    if (typeof unaccept !== 'function') {
-      throw new Error('Transport\'s "accept" function must return a cleanup function')
+  var register = (unaccept) => {
+    this._accepts[transportId] = { opts, unaccept }
+    for (var peer of this.peers) {
+      peer.sendAccept(transportId, opts)
     }
   }
-  this._accepts[transportId] = { opts, unaccept }
-  for (var peer of this.peers) {
-    peer.sendAccept(transportId, opts)
+  if (transport.accept) {
+    transport.accept(opts, this._onConnection.bind(this), (err, unaccept) => {
+      if (err) return this._error(err)
+      if (typeof unaccept !== 'function') {
+        throw new Error('Transport\'s "accept" function must return a cleanup function')
+      }
+      register(unaccept)
+    })
+  } else {
+    register()
   }
 }
 

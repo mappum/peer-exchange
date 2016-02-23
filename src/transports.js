@@ -2,6 +2,9 @@ var http = require('http')
 var getBrowserRTC = require('get-browser-rtc')
 var SimplePeer = require('simple-peer')
 var Websocket = require('websocket-stream')
+try {
+  var net = require('net')
+} catch (err) {}
 
 function webrtc (opts) {
   var wrtc = opts.wrtc || getBrowserRTC()
@@ -33,7 +36,7 @@ var websocket = {
     cb(null, ws)
   },
 
-  accept: function (opts, onConnection) {
+  accept: function (opts, onConnection, cb) {
     // TODO: option for already-created http(s) server
     if (!opts.port) {
       throw new Error('Must specify "port" option')
@@ -41,8 +44,8 @@ var websocket = {
     var server = http.createServer()
     server.listen(opts.port, () => {
       Websocket.createServer({ server }, onConnection)
+      cb(null, server.close.bind(server))
     })
-    return server.close.bind(server)
   }
 }
 
