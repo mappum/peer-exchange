@@ -207,6 +207,22 @@ test('errors', (t) => {
     e4.accept('tcp', { port: 7777 })
   })
 
+  t.test('error emitted when calling accept on same transport multiple times', (t) => {
+    var e4 = new Exchange('test')
+    e4.once('error', (err) => {
+      t.ok(err, 'got error')
+      t.equal(err.message, 'Already accepting with "tcp" transport', 'correct error message')
+      e4.once('error', (err) => {
+        t.ok(err, 'got error')
+        t.equal(err.message, 'Already accepting with "tcp" transport', 'correct error message')
+        e4.close(t.end)
+      })
+      e4.accept('tcp', { port: 7801 })
+    })
+    e4.accept('tcp', { port: 7800 })
+    e4.accept('tcp', { port: 7801 })
+  })
+
   t.end()
 })
 
