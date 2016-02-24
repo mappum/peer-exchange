@@ -283,7 +283,10 @@ Peer.prototype._sendUnaccept = function () {
 
 Peer.prototype.destroy = function () {
   this.socket.destroy()
-  clearTimeout(this._relayTimeout)
+  if (this._relayTimeout != null) {
+    clearTimeout(this._relayTimeout)
+    this._relayTimeout = null
+  }
 }
 
 function getRandom (array) {
