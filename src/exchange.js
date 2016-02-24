@@ -153,6 +153,9 @@ Exchange.prototype.close = function (cb) {
   for (var peer of this.peers) {
     peer.destroy()
   }
+  for (var transportId in this._accepts) {
+    this.unaccept(transportId)
+  }
   cb(null)
 }
 
