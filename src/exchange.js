@@ -92,11 +92,15 @@ Exchange.prototype.accept = function (transportId, opts, cb) {
   if (!this._transports[transportId]) {
     return cb(new Error(`Transport "${transportId}" not found`))
   }
-  if (this._accepts[transportId]) {
-    return cb(new Error(`Already accepting with "${transportId}" transport`))
-  }
+  var alreadyAcceptingError = new Error(`Already accepting with "${transportId}" transport`)
+  if (this._accepts[transportId]) return cb(alreadyAcceptingError)
   var transport = this._transports[transportId]
   var register = (unaccept) => {
+    if (this._accepts[transportId]) {
+      unaccept()
+      return cb(alreadyAcceptingError)
+    }
+
     this._accepts[transportId] = { opts, unaccept }
     for (var peer of this.peers) {
       peer._sendAccept(transportId, opts)
