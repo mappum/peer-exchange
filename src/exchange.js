@@ -3,6 +3,7 @@
 var EventEmitter = require('events')
 var util = require('util')
 var getBrowserRTC = require('get-browser-rtc')
+var once = require('once')
 var Peer = require('./peer.js')
 var transports = require('./transports.js')
 try {
@@ -19,6 +20,7 @@ function Exchange (id, opts) {
   }
   EventEmitter.call(this)
 
+  opts = opts || {}
   var wrtc = opts.wrtc || getBrowserRTC()
 
   this._transports = opts.transports
@@ -54,21 +56,19 @@ Exchange.prototype.getNewPeer = function (cb) {
 }
 
 Exchange.prototype.connect = function (transportId, address, opts, cb) {
-  cb = cb || ((err) => { if (err) this._error(err) })
+  cb = once(cb || ((err) => { if (err) this._error(err) }))
   transportId = transportId.toLowerCase()
   if (!this._transports[transportId]) {
     return cb(new Error(`Transport "${transportId}" not found`))
   }
   var connect = this._transports[transportId].connect
-  var called = false
-  connect(address, opts, null, (err, socket) => {
-    if (called) return
-    called = true
+  connect(address, opts, null, once((err, socket) => {
     if (err) return cb(err)
     socket.transport = transportId
     var peer = this._onConnection(socket, true)
+    peer.once('error', cb)
     peer._onReady(() => cb(null, peer))
-  })
+  }))
 }
 
 Exchange.prototype._createPeer = function (socket, outgoing) {
