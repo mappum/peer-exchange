@@ -87,6 +87,10 @@ Exchange.prototype._createPeer = function (socket, outgoing) {
 }
 
 Exchange.prototype.accept = function (transportId, opts, cb) {
+  if (typeof opts === 'function') {
+    cb = opts
+    opts = {}
+  }
   cb = cb || ((err) => { if (err) this._error(err) })
   transportId = transportId.toLowerCase()
   if (!this._transports[transportId]) {
