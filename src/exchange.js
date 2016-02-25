@@ -130,13 +130,14 @@ Exchange.prototype._onConnection = function (socket, outgoing) {
   return peer
 }
 
-Exchange.prototype.unaccept = function (transport) {
+Exchange.prototype.unaccept = function (transport, cb) {
   for (var peer of this.peers) {
     peer._sendUnaccept(transport)
   }
   var unaccept = this._accepts[transport].unaccept
   delete this._accepts[transport]
   if (unaccept) unaccept()
+  if (cb) cb()
 }
 
 Exchange.prototype.addPeer = function (peer) {
