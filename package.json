@@ -38,5 +38,16 @@
     "electron-webrtc": "0.0.3",
     "standard": "^6.0.7",
     "tap": "^5.7.0"
-  }
+  },
+  "directories": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mappum/peer-exchange.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mappum/peer-exchange/issues"
+  },
+  "homepage": "https://github.com/mappum/peer-exchange#readme"
 }
