@@ -6,6 +6,7 @@ var duplexify = require('duplexify').obj
 var mux = require('multiplex')
 var ndjson = require('ndjson')
 var hat = require('hat')
+var u = require('./util.js')
 
 var PROTOCOL_VERSION = 0
 
@@ -32,6 +33,8 @@ function Peer (exchange) {
   this.on('ready', () => {
     this._exchangeChannel.on('message:getPeer', this._onGetPeer.bind(this))
     this._exchangeChannel.on('message:incoming', this._onIncoming.bind(this))
+    this._exchangeChannel.on('message:accept', this._onAccept.bind(this))
+    this._exchangeChannel.on('message:unaccept', this._onUnaccept.bind(this))
   })
 }
 util.inherits(Peer, DuplexStream)
@@ -128,7 +131,7 @@ Peer.prototype._onHello = function (message) {
   }
   this._transports = message.transports
   // TODO: get addresses from peer
-  this.remoteAddress = getRemoteAddress(this.socket)
+  this.remoteAddress = u.getRemoteAddress(this.socket)
   this._accepts = message.accepts
 
   this._exchangeChannel.write({ command: 'helloack' })
@@ -143,6 +146,20 @@ Peer.prototype._onHelloack = function (message) {
   }
   this._receivedHelloack = true
   this._maybeReady()
+}
+
+Peer.prototype._onAccept = function (message) {
+  if (this._accepts[message.transport]) return
+  if (!this._exchange._transports[message.transport]) return
+  this._accepts[message.transport] = message.opts || true
+  this._exchange._acceptPeers[message.transport].push(this)
+}
+
+Peer.prototype._onUnaccept = function (message) {
+  if (!this._accepts[message.transport]) return
+  if (!this._exchange._transports[message.transport]) return
+  delete this._accepts[message.transport]
+  u.remove(this._exchange._acceptPeers[message.transport], this)
 }
 
 Peer.prototype._maybeReady = function () {
@@ -222,10 +239,10 @@ Peer.prototype._onGetPeer = function (message) {
     })
   }
   // select random transport that has valid accepting peers
-  var transportId = getRandom(transports)
+  var transportId = u.getRandom(transports)
   var peers = acceptPeers[transportId]
   // select random peer
-  var peer = getRandom(peers)
+  var peer = u.getRandom(peers)
   var nonce = hat()
 
   if (this._exchange._transports[transportId].onIncoming) {
@@ -273,12 +290,19 @@ Peer.prototype._onIncoming = function (message) {
   })
 }
 
-Peer.prototype._sendAccept = function () {
-  // TODO
+Peer.prototype._sendAccept = function (id, opts) {
+  this._exchangeChannel.write({
+    command: 'accept',
+    transport: id,
+    opts
+  })
 }
 
-Peer.prototype._sendUnaccept = function () {
-  // TODO
+Peer.prototype._sendUnaccept = function (id) {
+  this._exchangeChannel.write({
+    command: 'unaccept',
+    transport: id
+  })
 }
 
 Peer.prototype.destroy = function () {
@@ -286,22 +310,5 @@ Peer.prototype.destroy = function () {
   if (this._relayTimeout != null) {
     clearTimeout(this._relayTimeout)
     this._relayTimeout = null
-  }
-}
-
-function getRandom (array) {
-  return array[Math.floor(Math.random() * array.length)]
-}
-
-// HACK: recursively looks for socket property that has a remote address
-function getRemoteAddress (socket) {
-  if (socket.remoteAddress) return socket.remoteAddress
-  if (socket.socket) {
-    let address = getRemoteAddress(socket.socket)
-    if (address) return address
-  }
-  if (socket._socket) {
-    let address = getRemoteAddress(socket._socket)
-    if (address) return address
   }
 }

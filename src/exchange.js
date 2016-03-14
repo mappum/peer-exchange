@@ -9,6 +9,7 @@ var transports = require('./transports.js')
 try {
   var net = require('net')
 } catch (err) {}
+var remove = require('./util.js').remove
 
 module.exports = Exchange
 function Exchange (id, opts) {
@@ -175,13 +176,4 @@ Exchange.prototype.close = function (cb) {
 
 Exchange.prototype._error = function (err) {
   this.emit('error', err)
-}
-
-function remove (array, object) {
-  var index = array.indexOf(object)
-  if (index !== -1) {
-    array.splice(index, 1)
-    return true
-  }
-  return false
 }
