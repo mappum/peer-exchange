@@ -4,7 +4,7 @@
   "description": "Decentralized peer discovery and signaling",
   "main": "index.js",
   "scripts": {
-    "test": "standard src test index.js && tap --cov test/*.js",
+    "test": "standard src test index.js && tap -Rspec --cov test/*.js",
     "build": "rm -rf lib && babel --presets es2015 src -d lib",
     "source": "rm -rf lib && ln -s src lib",
     "prepublish": "npm run build",
