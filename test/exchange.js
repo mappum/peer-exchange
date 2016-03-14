@@ -260,6 +260,34 @@ test('remove acceptPeers on disconnect', (t) => {
   })
 })
 
+test('accept/unaccept after connect', (t) => {
+  var e4 = new Exchange('test')
+  e4.accept('tcp', { port: 7780 })
+
+  var e5 = new Exchange('test')
+  e5.connect('tcp', 'localhost', { port: 7780 }, (err, peer) => {
+    t.error(err, 'no error')
+    t.ok(peer, 'got peer')
+    t.equal(e4._acceptPeers.tcp.length, 0, 'e5 was not added to e4\'s acceptPeers')
+    t.equal(e4.peers.length, 1, 'e5 was added to e4\'s peers')
+
+    e5.accept('tcp', { port: 7781 }, (err) => {
+      t.error(err, 'no error')
+      setTimeout(() => {
+        t.equal(e4._acceptPeers.tcp.length, 1, 'e5 was added to e4\'s acceptPeers')
+
+        e5.unaccept('tcp', (err) => {
+          t.error(err, 'no error')
+          setTimeout(() => {
+            t.equal(e4._acceptPeers.tcp.length, 0, 'e5 was removed from e4\'s acceptPeers')
+            e4.close(() => e5.close(t.end))
+          }, 200)
+        })
+      }, 100)
+    })
+  })
+})
+
 test('cleanup', (t) => {
   wrtc.electronDaemon.close()
   e1.close()
