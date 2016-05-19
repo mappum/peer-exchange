@@ -1,4 +1,5 @@
 var http = require('http')
+var https = require('https')
 var getBrowserRTC = require('get-browser-rtc')
 var SimplePeer = require('simple-peer')
 var Websocket = require('websocket-stream')
@@ -38,11 +39,17 @@ var websocket = {
   },
 
   accept: function (opts, onConnection, cb) {
-    // TODO: option for already-created http(s) server
     if (!opts.port) {
       throw new Error('Must specify "port" option')
     }
-    var server = http.createServer()
+    var httpsOpts
+    if (opts.https) {
+      httpsOpts = opts.https
+      delete opts.https
+      opts.secure = true
+    }
+    var server = httpsOpts
+      ? https.createServer(https) : http.createServer()
     server.on('error', cb)
     server.listen(opts.port, () => {
       var wss = Websocket.createServer({ server }, onConnection)

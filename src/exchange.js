@@ -75,6 +75,7 @@ Exchange.prototype.connect = function (transportId, address, opts, cb) {
 Exchange.prototype._createPeer = function (socket, outgoing) {
   var peer = new Peer(this)
   peer.incoming = !outgoing
+  peer.transport = socket.transport
   peer.once('error', (err) => {
     this.removePeer(peer)
     this.emit('peerError', err, peer)
@@ -102,7 +103,7 @@ Exchange.prototype.accept = function (transportId, opts, cb) {
   var transport = this._transports[transportId]
   var register = (unaccept) => {
     if (this._accepts[transportId]) {
-      unaccept()
+      if (unaccept) unaccept()
       return cb(alreadyAcceptingError)
     }
 
