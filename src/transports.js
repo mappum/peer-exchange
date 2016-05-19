@@ -49,7 +49,7 @@ var websocket = {
       opts.secure = true
     }
     var server = httpsOpts
-      ? https.createServer(https) : http.createServer()
+      ? https.createServer(httpsOpts) : http.createServer()
     server.on('error', cb)
     server.listen(opts.port, () => {
       var wss = Websocket.createServer({ server }, onConnection)
