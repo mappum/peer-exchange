@@ -1,4 +1,4 @@
-var test = require('tap').test
+var test = require('tape')
 var wrtc = require('electron-webrtc')()
 var Exchange = require('../lib/exchange.js')
 var transports = require('../lib/transports.js')
