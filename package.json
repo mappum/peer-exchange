@@ -1,6 +1,6 @@
 {
   "name": "peer-exchange",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Decentralized peer discovery and signaling",
   "main": "index.js",
   "scripts": {
