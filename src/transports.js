@@ -40,7 +40,7 @@ var websocket = {
 
   accept: function (opts, onConnection, cb) {
     if (!opts.port) {
-      throw new Error('Must specify "port" option')
+      return cb(new Error('Must specify "port" option'))
     }
     var httpsOpts
     if (opts.https) {
@@ -68,7 +68,7 @@ var tcp = {
   accept: function (opts, onConnection, cb) {
     // TODO: option for already-created TCP server
     if (!opts.port) {
-      throw new Error('Must specify "port" option')
+      return cb(new Error('Must specify "port" option'))
     }
     var server = net.createServer(onConnection)
     server.on('error', cb)
