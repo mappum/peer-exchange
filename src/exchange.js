@@ -137,13 +137,17 @@ Exchange.prototype._onConnection = function (socket, outgoing) {
 }
 
 Exchange.prototype.unaccept = function (transport, cb) {
+  cb = cb || ((err) => { if (err) this._error(err) })
+  if (!this._accepts[transport]) {
+    return cb(new Error(`Not accepting connections with "${transport}" transport`))
+  }
   for (var peer of this.peers) {
     peer._sendUnaccept(transport)
   }
   var unaccept = this._accepts[transport].unaccept
   delete this._accepts[transport]
   if (unaccept) unaccept()
-  if (cb) cb()
+  cb()
 }
 
 Exchange.prototype.addPeer = function (peer) {
