@@ -8,15 +8,17 @@ var ndjson = require('ndjson')
 var hat = require('hat')
 var u = require('./util.js')
 
-var PROTOCOL_VERSION = 0
+var PROTOCOL_VERSION = 1
 
 // TODO: support arbitrary streams to mux many protocols across one peer connection
 module.exports = Peer
-function Peer (exchange) {
+function Peer (exchange, opts = {}) {
   if (!(this instanceof Peer)) {
     return new Peer(exchange)
   }
   DuplexStream.call(this)
+
+  this.selectPeer = opts.selectPeer || this._selectPeer
 
   this.socket = null
   this.mux = null
@@ -197,16 +199,37 @@ Peer.prototype._createChannel = function (id, opts) {
 Peer.prototype.getNewPeer = function (cb) {
   var reqId = hat()
   this._exchangeChannel.once(`message:${reqId}`, (message) => {
-    if (!message.transport || !message.address) {
+    if (message.error) {
+      return cb(new Error(message.error))
+    }
+    if (message.address == null) {
       return cb(new Error('Peer does not have any peers to exchange'))
     }
-    var transport = this._exchange._transports[message.transport]
-    var relay = this._createObjectChannel('relay:' + message.nonce)
+    if (Object.keys(message.accepts).length === 0) {
+      return cb(new Error('No matching transports'))
+    }
+
+    var transports = []
+    for (let transportId in this._exchange._transports) {
+      if (message.accepts[transportId] == null) continue
+      transports.push(transportId)
+    }
+    var transportId = u.getRandom(transports)
+    var transport = this._exchange._transports[transportId]
+    var opts = message.accepts[transportId]
+    var relay = null
+    if (transport.onIncoming) {
+      relay = this._createObjectChannel('relay:' + reqId)
+    }
     // TODO: support multiple addresses (so we can try to find best one)
-    transport.connect(message.address, message.opts, relay, (err, socket) => {
+    transport.connect(message.address, opts, relay, (err, socket) => {
       if (err) return cb(err)
       var peer = this._exchange._onConnection(socket, true)
       peer._onReady(() => cb(null, peer))
+    })
+    this._exchangeChannel.write({
+      command: `connect:${reqId}`,
+      transport: transportId
     })
   })
   this._exchangeChannel.write({
@@ -215,7 +238,56 @@ Peer.prototype.getNewPeer = function (cb) {
   })
 }
 
-Peer.prototype._onGetPeer = function (message) {
+Peer.prototype._onGetPeer = function (getPeerMsg) {
+  var respond = (err, peer) => {
+    this._exchangeChannel.write({
+      command: getPeerMsg.reqId,
+      accepts: peer ? peer._accepts : null,
+      address: peer ? peer.remoteAddress : null,
+      error: err ? err.getPeerMsg : null
+    })
+  }
+  this.selectPeer((err, peer) => {
+    if (err) return respond(err)
+    var reqId = getPeerMsg.reqId
+
+    // handle connect event if requesting peer chooses to connect
+    var onConnect = (connectMsg) => {
+      if (peer._accepts[connectMsg.transport] == null) return
+      var transport = this._exchange._transports[connectMsg.transport]
+      if (transport.onIncoming == null) return
+
+      // set up a relay stream between the requesting peer and selected peer, to
+      // facilitate signaling, NAT traversal, etc
+      this._createRelay(peer, connectMsg.transport, reqId)
+
+      if (!(peer instanceof Peer)) return
+
+      // notify selected peer about incoming connection/relay
+      peer._exchangeChannel.write({
+        command: 'incoming',
+        id: reqId,
+        transport: connectMsg.transport
+      })
+    }
+    this._exchangeChannel.once(`message:connect:${reqId}`, onConnect)
+    var timeout = setTimeout(() => {
+      this._exchangeChannel.removeListener(`message:connect:${reqId}`, onConnect)
+    }, 30 * 1000)
+    if (timeout.unref) timeout.unref()
+
+    if (!(peer instanceof Peer)) {
+      respond(null, {
+        _accepts: { relay: true },
+        remoteAddress: peer.remoteAddress
+      })
+    } else {
+      respond(err, peer)
+    }
+  })
+}
+
+Peer.prototype._selectPeer = function (cb) {
   // select from our peers who are accepting connections
   var exchange = this._exchange
   var acceptPeers = {}
@@ -231,45 +303,19 @@ Peer.prototype._onGetPeer = function (message) {
   if (transports.length === 0) {
     // if we have no accepting peers for any compatible transports,
     // send null response
-    return this._exchangeChannel.write({
-      command: message.reqId,
-      transport: null,
-      opts: null,
-      address: null
-    })
+    return cb(new Error('No peers available'))
   }
   // select random transport that has valid accepting peers
   var transportId = u.getRandom(transports)
   var peers = acceptPeers[transportId]
   // select random peer
   var peer = u.getRandom(peers)
-  var nonce = hat()
-
-  if (this._exchange._transports[transportId].onIncoming) {
-    // set up a relay stream between the requesting peer and selected peer, to
-    // facilitate signaling, NAT traversal, etc
-    this._createRelay(peer, transportId, nonce)
-
-    // notify selected peer about incoming connection/relay
-    peer._exchangeChannel.write({
-      command: 'incoming',
-      nonce,
-      transport: transportId
-    })
-  }
-
-  this._exchangeChannel.write({
-    command: message.reqId,
-    transport: transportId,
-    opts: peer._accepts[transportId],
-    address: peer.remoteAddress,
-    nonce
-  })
+  cb(null, peer)
 }
 
-Peer.prototype._createRelay = function (destinationPeer, transportId, nonce) {
-  var stream1 = this._createChannel('relay:' + nonce)
-  var stream2 = destinationPeer._createChannel('relay:' + nonce)
+Peer.prototype._createRelay = function (destinationPeer, transportId, id) {
+  var stream1 = this._createChannel('relay:' + id)
+  var stream2 = destinationPeer._createChannel('relay:' + id)
   stream1.pipe(stream2).pipe(stream1)
 
   var closeRelay = () => {
@@ -278,12 +324,14 @@ Peer.prototype._createRelay = function (destinationPeer, transportId, nonce) {
   }
   this.once('close', closeRelay)
   destinationPeer.once('close', closeRelay)
-  this._relayTimeout = setTimeout(closeRelay, 30 * 1000) // close relay after 30s
+  if (transportId !== 'relay') {
+    this._relayTimeout = setTimeout(closeRelay, 30 * 1000) // close relay after 30s
+  }
 }
 
 Peer.prototype._onIncoming = function (message) {
   var transport = this._exchange._transports[message.transport]
-  var relay = this._createObjectChannel('relay:' + message.nonce)
+  var relay = this._createObjectChannel('relay:' + message.id)
   transport.onIncoming(relay, (err, socket) => {
     if (err) return this._error(err)
     this._exchange._onConnection(socket)

@@ -12,7 +12,7 @@ try {
 var remove = require('./util.js').remove
 
 module.exports = Exchange
-function Exchange (id, opts) {
+function Exchange (id, opts = {}) {
   if (!id || typeof id !== 'string') {
     throw new Error('A network id must be specified')
   }
@@ -21,8 +21,8 @@ function Exchange (id, opts) {
   }
   EventEmitter.call(this)
 
-  opts = opts || {}
   var wrtc = opts.wrtc || getBrowserRTC()
+  this.selectPeer = opts.selectPeer
 
   this._transports = opts.transports
   if (!opts.transports) {
@@ -73,7 +73,7 @@ Exchange.prototype.connect = function (transportId, address, opts, cb) {
 }
 
 Exchange.prototype._createPeer = function (socket, outgoing) {
-  var peer = new Peer(this)
+  var peer = new Peer(this, { selectPeer: this.selectPeer })
   peer.incoming = !outgoing
   peer.transport = socket.transport
   peer.once('error', (err) => {
