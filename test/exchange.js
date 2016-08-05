@@ -236,27 +236,30 @@ test('remove acceptPeers on disconnect', (t) => {
     t.error(err, 'no error')
     t.ok(peer, 'got peer')
     t.equal(e4._acceptPeers.tcp.length, 1, 'e5 was added to e4\'s acceptPeers')
-    t.equal(e4.peers.length, 1, 'e5 was added to e4\'s peers')
-
-    var e6 = new Exchange('test')
-    e6.connect('tcp', 'localhost', { port: 7780 }, (err, peer) => {
-      t.error(err, 'no error')
-      t.ok(peer, 'got peer')
-      t.equal(e4._acceptPeers.tcp.length, 1, 'e6 was not added to e4\'s acceptPeers')
-      t.equal(e4.peers.length, 2, 'e6 was added to e4\'s peers')
-      e4.once('disconnect', () => {
-        t.pass('e5 closed')
-        t.equal(e4._acceptPeers.tcp.length, 0, 'e5 was removed from e4\'s acceptPeers')
-        t.equal(e4.peers.length, 1, 'e5 was removed from e4\'s peers')
-        e6.getNewPeer((err, peer) => {
-          t.ok(err, 'got error')
-          t.notOk(peer, 'no peer')
-          t.equal(err.message, 'Peer does not have any peers to exchange', 'correct error message')
-          e4.close(() => e6.close(t.end))
-        })
+    setTimeout(function () {
+      t.equal(e4.peers.length, 1, 'e5 was added to e4\'s peers')
+      var e6 = new Exchange('test')
+      e6.connect('tcp', 'localhost', { port: 7780 }, (err, peer) => {
+        t.error(err, 'no error')
+        t.ok(peer, 'got peer')
+        t.equal(e4._acceptPeers.tcp.length, 1, 'e6 was not added to e4\'s acceptPeers')
+        setTimeout(function () {
+          t.equal(e4.peers.length, 2, 'e6 was added to e4\'s peers')
+          e4.once('disconnect', () => {
+            t.pass('e5 closed')
+            t.equal(e4._acceptPeers.tcp.length, 0, 'e5 was removed from e4\'s acceptPeers')
+            t.equal(e4.peers.length, 1, 'e5 was removed from e4\'s peers')
+            e6.getNewPeer((err, peer) => {
+              t.ok(err, 'got error')
+              t.notOk(peer, 'no peer')
+              t.equal(err.message, 'Peer does not have any peers to exchange', 'correct error message')
+              e4.close(() => e6.close(t.end))
+            })
+          })
+          e5.close()
+        }, 250)
       })
-      e5.close()
-    })
+    }, 250)
   })
 })
 
