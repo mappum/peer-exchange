@@ -254,8 +254,6 @@ Peer.prototype._onGetPeer = function (getPeerMsg) {
     // handle connect event if requesting peer chooses to connect
     var onConnect = (connectMsg) => {
       if (peer._accepts[connectMsg.transport] == null) return
-      var transport = this._exchange._transports[connectMsg.transport]
-      if (transport.onIncoming == null) return
 
       // set up a relay stream between the requesting peer and selected peer, to
       // facilitate signaling, NAT traversal, etc
@@ -315,7 +313,11 @@ Peer.prototype._selectPeer = function (cb) {
 
 Peer.prototype._createRelay = function (destinationPeer, transportId, id) {
   var stream1 = this._createChannel('relay:' + id)
-  var stream2 = destinationPeer._createChannel('relay:' + id)
+
+  var stream2
+  if (transportId === 'relay') stream2 = destinationPeer
+  else stream2 = destinationPeer._createChannel('relay:' + id)
+
   stream1.pipe(stream2).pipe(stream1)
 
   var closeRelay = () => {

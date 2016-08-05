@@ -78,9 +78,6 @@ var tcp = {
 var relay = {
   connect (address, opts, relay, cb) {
     cb(null, relay)
-  },
-  onIncoming () {
-
   }
 }
 
