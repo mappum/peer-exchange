@@ -6,6 +6,8 @@ const old = require('old')
 const mux = require('multiplex')
 const pxp = require('./pxp.js')
 const random = require('hat')
+const onObject = require('on-object')
+const assign = require('object-assign')
 
 const PROTOCOL_VERSION = 1
 const CANDIDATE_TIMEOUT = 15 * 1000
@@ -15,7 +17,7 @@ class Peer extends EventEmitter {
     if (!isDuplex(socket)) {
       throw new Error('socket must be a duplex stream')
     }
-    super({ objectMode: true })
+    super()
 
     this.error = this.error.bind(this)
 
@@ -23,13 +25,17 @@ class Peer extends EventEmitter {
     this.networks = networks
     this.candidates = {}
     this.closed = false
+    this.ready = false
+    this.connected = {}
     this.remoteNetworks = null
     this.remoteConnectInfo = null
 
     this.socket = socket
-    socket.on('error', this.error)
-    socket.on('close', this.onClose.bind(this))
-    socket.on('disconnect', this.onClose.bind(this))
+    onObject(socket).on({
+      error: this.error,
+      close: this.close.bind(this),
+      disconnect: this.close.bind(this)
+    })
 
     this.mux = mux(this.onStream)
     socket.pipe(this.mux).pipe(socket)
@@ -37,6 +43,11 @@ class Peer extends EventEmitter {
     this.pxp = pxp(this.createStream('pxp'))
     this.pxp.once('hello', this.onHello.bind(this))
     this.sendHello()
+  }
+
+  onceReady (f) {
+    if (this.ready) return f()
+    this.once('ready', f)
   }
 
   selfIsAccepting () {
@@ -49,18 +60,14 @@ class Peer extends EventEmitter {
 
   error (err) {
     this.emit('error', err)
-    this.onClose()
+    this.close()
   }
 
-  onClose () {
+  close () {
     if (this.closed) return
     this.closed = true
     this.emit('disconnect')
     this.socket.destroy()
-    this.clearTimers()
-  }
-
-  clearTimers () {
     for (let clear of this.timers) clear()
   }
 
@@ -70,15 +77,21 @@ class Peer extends EventEmitter {
     return stream
   }
 
+  getConnectInfo () {
+    var connectInfo = assign({}, this.remoteConnectInfo)
+    connectInfo.pxp = true
+    return connectInfo
+  }
+
   sendHello () {
     this.pxp.send('hello',
       PROTOCOL_VERSION,
       this.connectInfo,
-      this.networks
+      Object.keys(this.networks)
     )
   }
 
-  onHello ([ version, networks, connectInfo ]) {
+  onHello ([ version, connectInfo, networks ]) {
     if (version !== PROTOCOL_VERSION) {
       let err = new Error('Peer has an invalid protocol version.' +
         `theirs=${version}, ours=${PROTOCOL_VERSION}`)
@@ -86,16 +99,20 @@ class Peer extends EventEmitter {
     }
     this.remoteNetworks = networks
     this.remoteConnectInfo = connectInfo
-    this.on('getpeers', this.onPeers.bind(this))
-    this.on('relay', this.onRelay.bind(this))
-    if (this.selfAccepting()) {
-      this.on('incoming', this.onIncoming.bind(this))
+    onObject(this.pxp).on({
+      getpeers: this.onGetPeers.bind(this),
+      relay: this.onRelay.bind(this),
+      upgrade: this.onUpgrade.bind(this)
+    })
+    if (this.selfIsAccepting()) {
+      this.pxp.on('incoming', this.onIncoming.bind(this))
     }
+    this.ready = true
     this.emit('ready')
   }
 
-  onPeers (network, res) {
-    if (!this.networks.includes(network)) {
+  onGetPeers (network, res) {
+    if (!this.networks[network]) {
       let err = new Error('Peer requested an unknown network:' +
           `"${network}"`)
       return this.error(err)
@@ -103,20 +120,17 @@ class Peer extends EventEmitter {
     var getPeers = this.networks[network]
     getPeers((err, peers) => {
       if (err) return this.error(err)
+      peers = peers.filter((p) => p !== this)
       var peerInfo = peers.map((peer) => {
-        var id = this.addCandidate(network, peer)
-        return [
-          id,
-          peer.remoteConnectInfo,
-          peer.remoteNetworks[network]
-        ]
+        var id = this.addCandidate(peer)
+        return [ id, peer.getConnectInfo() ]
       })
-      res(peerInfo)
+      res(null, peerInfo)
     })
   }
 
-  addCandidate (network, peer) {
-    var id = random()
+  addCandidate (peer) {
+    var id = random(32)
     this.candidates[id] = peer
     var timer = setTimeout(
       () => delete this.candidates[id],
@@ -126,7 +140,7 @@ class Peer extends EventEmitter {
     return id
   }
 
-  onRelay ([ network, to ]) {
+  onRelay ([ network, to ], res) {
     // TODO: rate limiting
     // TODO: ensure there isn't already a relay to this destination
     var sourceStream = this.createStream(`relay:${to}`)
@@ -134,16 +148,18 @@ class Peer extends EventEmitter {
     if (!dest) {
       let err = new Error('Peer requested unknown candidate: ' +
         `network=${network},id=${to}`)
+      res(err.message)
       return this.error(err)
     }
     var connectRelay = (destStream) => {
       sourceStream.pipe(destStream).pipe(sourceStream)
       sourceStream.once('end', () => destStream.end())
       destStream.once('end', () => sourceStream.end())
+      res(null)
     }
     if (dest instanceof Peer) {
-      let id = random()
-      dest.send('incoming', [ id ], () => {
+      let id = random(32)
+      dest.pxp.send('incoming', [ id ], () => {
         var destStream = dest.createStream(`relay:${id}`)
         connectRelay(destStream)
       })
@@ -154,15 +170,65 @@ class Peer extends EventEmitter {
   }
 
   onIncoming ([ id ], res) {
-    var relay = this.createStream(`relay:${id}`)
-    var peer = new Peer(relay)
-    peer.incoming = true
-    this.emit('peer', peer)
+    var stream = this.createStream(`relay:${id}`)
+    this.emit('incoming', stream)
     res()
   }
 
-  getPeers (cb) {
-    this.pxp.send('getpeers', cb)
+  onUpgrade ([ transport, data ]) {
+    this.emit('upgrade', transport, data)
+  }
+
+  onConnect (network, res) {
+    if (this.connected[network]) {
+      var err = new Error('Peer tried to connect to network ' +
+        `"${network}" twice`)
+      return this.error(err)
+    }
+    var stream = this.createDataStream(network, res)
+    this.emit(`connect:${network}`, stream)
+    res()
+  }
+
+  createDataStream (network) {
+    this.connected[network] = true
+    var stream = this.createStream(`data:${network}`)
+    stream.once('end', () => delete this.connected[network])
+    return stream
+  }
+
+  connect (network, cb) {
+    if (this.connected[network]) {
+      let err = new Error(`Already connected for network "${network}"`)
+      return cb(err)
+    }
+    var stream = this.createDataStream(network)
+    this.pxp.send('connect', network, () => {
+      cb(null, stream)
+    })
+  }
+
+  getPeers (network, cb) {
+    this.pxp.send('getpeers', network, ([ err, peers ]) => {
+      if (err) return cb(new Error(err))
+      if (!Array.isArray(peers)) {
+        let err = new Error('Peer sent invalid response to "getpeers"')
+        return cb(err)
+      }
+      if (peers.length === 0) {
+        let err = new Error('Got empty reponse for "getpeers"')
+        return cb(err)
+      }
+      cb(null, peers)
+    })
+  }
+
+  relay (network, to, cb) {
+    this.pxp.send('relay', [ network, to ], (err) => {
+      if (err) return cb(new Error(err))
+      var relay = this.createStream(`relay:${to}`)
+      cb(null, relay)
+    })
   }
 }
 
