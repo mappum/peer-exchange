@@ -4,8 +4,9 @@ const RTCPeer = require('simple-peer')
 const wrtc = require('get-browser-rtc')()
 const onObject = require('on-object')
 const assign = require('object-assign')
-const debug = require('debug')('peer-exchange:swarm')
-const Peer = require('./peer.js')
+const debug = require('debug')('peer-exchange')
+const once = require('once')
+const Peer = require('pxp')
 const { floor, random } = Math
 
 class Swarm extends EventEmitter {
@@ -24,44 +25,22 @@ class Swarm extends EventEmitter {
         ' as the "wrtc" option (for example, the "wrtc" or ' +
         '"electron-webrtc" packages).')
     }
-    this.connectInfo = {}
+    if (this.allowIncoming) {
+      this.connectInfo = {
+        pxp: true,
+        relay: true,
+        webrtc: true
+      }
+    }
     this.ready = false
     this.error = this.error.bind(this)
-
-    this.initialize()
-  }
-
-  initialize () {
-    var rtcInfoPeer = new RTCPeer({
-      initiator: true,
-      trickle: false,
-      wrtc: this.wrtc
-    })
-    rtcInfoPeer.once('signal', (signal) => {
-      this.connectInfo.webrtc = signal
-      rtcInfoPeer.destroy()
-      this.setReady()
-    })
-  }
-
-  setReady () {
-    debug('ready')
-    this.ready = true
-    this.emit('ready')
-  }
-
-  onceReady (f) {
-    if (this.ready) return f()
-    this.once('ready', f)
   }
 
   error (err) {
     this.emit('error', err)
   }
 
-  // TODO: method to listen on HTTP server
-
-  addPeer (peer) {
+  _addPeer (peer) {
     this.peers.push(peer)
     onObject(peer).once({
       disconnect: () => {
@@ -70,7 +49,7 @@ class Swarm extends EventEmitter {
         this.peers.splice(index, 1)
         this.emit('disconnect', peer)
       },
-      error: this.error
+      error: (err) => this.emit('peerError', err, peer)
     })
     if (peer.incoming) {
       peer.once(`connect:${this.networkId}`, (stream) => {
@@ -82,35 +61,42 @@ class Swarm extends EventEmitter {
         this.emit('connect', stream, peer)
       })
     }
-    peer.on('upgrade', (...args) => this.onUpgrade(peer, ...args))
     if (this.allowIncoming) {
       peer.on('incoming', (relay) => {
         debug('adding incoming peer')
         var incomingPeer = this.createPeer(relay, {
           incoming: true,
-          relay: true
+          relayed: true
         })
-        this.addPeer(incomingPeer)
+        incomingPeer.on('upgrade', (...args) =>
+          this.onUpgrade(incomingPeer, ...args))
+        this._addPeer(incomingPeer)
       })
     }
     this.emit('peer', peer)
   }
 
-  connect (stream, incoming, cb) {
-    if (typeof incoming === 'function') {
-      cb = incoming
-      incoming = false
+  connect (stream, opts, cb) {
+    if (typeof opts === 'function') {
+      cb = opts
+      opts = {}
     }
-    if (!cb) cb = (err) => { if (err) this.emit('connectError', err) }
-    this.onceReady(() => {
-      var peer = this.createPeer(stream, { incoming })
-      peer.once('error', cb)
-      peer.onceReady(() => {
-        peer.removeListener('error', cb)
-        this.addPeer(peer)
-        cb(null, peer)
-      })
+    var peer = this.createPeer(stream, opts)
+    if (cb) peer.once('error', cb)
+    peer.onceReady(() => {
+      if (cb) peer.removeListener('error', cb)
+      this._addPeer(peer)
+      if (cb) cb(null, peer)
     })
+  }
+
+  accept (stream, opts, cb) {
+    if (typeof opts === 'function') {
+      cb = opts
+      opts = {}
+    }
+    opts.incoming = true
+    this.connect(stream, opts, cb)
   }
 
   createPeer (stream, opts = {}) {
@@ -135,39 +121,82 @@ class Swarm extends EventEmitter {
     return this.connectInfo
   }
 
-  onUpgrade (oldPeer, transport, connectInfo) {
+  onUpgrade (oldPeer, { transport, offer }, res) {
     if (transport !== 'webrtc') {
       let err = new Error('Peer requested upgrade via unknown transport: ' +
         `"${transport}"`)
+      res(err.message)
       return oldPeer.error(err)
     }
     debug(`upgrading peer: ${transport}`)
-    var stream = new RTCPeer({ wrtc: this.wrtc })
-    stream.signal(connectInfo)
-    this.connect(stream, true, (err) => {
-      if (err) return this.error(err)
-      oldPeer.close()
+    var rtcConn = new RTCPeer({ wrtc: this.wrtc, trickle: false })
+    rtcConn.signal(offer)
+    rtcConn.once('signal', (answer) => {
+      rtcConn.once('connect', () => {
+        this.connect(rtcConn, { incoming: true }, (err) => {
+          if (err) return this.error(err)
+          oldPeer.close()
+        })
+      })
+      res(null, answer)
     })
   }
 
-  upgradePeer (peer, cb) {
-
+  upgradePeer (oldPeer, cb) {
+    var rtcConn = new RTCPeer({
+      wrtc: this.wrtc,
+      trickle: false,
+      initiator: true
+    })
+    rtcConn.once('signal', (offer) => {
+      rtcConn.once('connect', () => {
+        this.connect(rtcConn, (err, newPeer) => {
+          if (err) return cb(err)
+          oldPeer.close()
+          cb(null, newPeer)
+        })
+      })
+      oldPeer.upgrade({
+        transport: 'webrtc',
+        offer
+      }, (err, answer) => {
+        if (err) return cb(err)
+        rtcConn.signal(answer)
+      })
+    })
   }
 
   getNewPeer (cb) {
-    this.onceReady(() => {
-      if (this.peers.length === 0) {
-        return cb(new Error('Not connected to any peers'))
+    if (this.peers.length === 0) {
+      return cb(new Error('Not connected to any peers'))
+    }
+    // TODO: smarter selection
+    var peer = this.peers[floor(random() * this.peers.length)]
+    peer.getPeers(this.networkId, (err, candidates) => {
+      if (err) return cb(err)
+      var candidate = candidates[floor(random() * candidates.length)]
+      if (candidate.connectInfo.pxp) {
+        this.relayAndUpgrade(peer, candidate, cb)
+      } else {
+        this.relay(peer, candidate, cb)
       }
-      // TODO: smarter selection
-      var peer = this.peers[floor(random() * this.peers.length)]
-      peer.getPeers(this.networkId, (err, peers) => {
-        if (err) return cb(err)
-        peer.relay(this.networkId, peers[0][0], (err, relay) => {
-          if (err) return cb(err)
-          this.connect(relay, cb)
-        })
-      })
+    })
+  }
+
+  relayAndUpgrade (peer, dest, cb) {
+    cb = once(cb)
+    peer.relay(dest, (err, relay) => {
+      if (err) return cb(err)
+      var relayPeer = this.createPeer(relay, { relayed: true })
+      relayPeer.once('error', cb)
+      this.upgradePeer(relayPeer, cb)
+    })
+  }
+
+  relay (peer, dest, cb) {
+    peer.relay(dest, (err, relay) => {
+      if (err) return cb(err)
+      this.emit('connect', relay)
     })
   }
 }
