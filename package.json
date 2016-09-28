@@ -64,5 +64,8 @@
   "bugs": {
     "url": "https://github.com/mappum/peer-exchange/issues"
   },
-  "homepage": "https://github.com/mappum/peer-exchange#readme"
+  "homepage": "https://github.com/mappum/peer-exchange#readme",
+  "browser": {
+    "electron-webrtc": false
+  }
 }

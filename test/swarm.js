@@ -1,6 +1,6 @@
 var test = require('tape')
 var Swarm = require('../')
-var { PassThrough } = require('stream')
+var PassThrough = require('stream').PassThrough
 var dup = require('duplexify')
 if (!process.browser) {
   var wrtc = require('electron-webrtc')()
@@ -74,15 +74,35 @@ test('create Swarm', function (t) {
 
 test('connect', function (t) {
   t.test('simple connect', function (t) {
-    t.plan(8)
+    t.plan(18)
     var swarm1 = Swarm('somenet', { wrtc: wrtc })
     var swarm2 = Swarm('somenet', { wrtc: wrtc })
     var streams = createStreams()
     swarm1.on('peer', function (peer) {
       t.pass('got "peer" event from swarm1')
+      t.equal(swarm1.peers.length, 1, 'correct peers length')
+      t.equal(swarm1.peers[0], peer, 'correct peer object')
     })
     swarm2.on('peer', function (peer) {
       t.pass('got "peer" event from swarm2')
+      t.equal(swarm2.peers.length, 1, 'correct peers length')
+      t.equal(swarm2.peers[0], peer, 'correct peer object')
+    })
+    swarm1.on('connect', function (stream) {
+      t.pass('received "connect" event from swarm1')
+      stream.write('123')
+      stream.once('data', function (data) {
+        t.pass('received stream data')
+        t.equal(data.toString(), '456', 'correct data')
+      })
+    })
+    swarm2.on('connect', function (stream) {
+      t.pass('received "connect" event from swarm2')
+      stream.write('456')
+      stream.once('data', function (data) {
+        t.pass('received stream data')
+        t.equal(data.toString(), '123', 'correct data')
+      })
     })
     swarm1.connect(streams[0], function (err, peer) {
       t.pass('swarm1 connect callback called')
@@ -111,6 +131,6 @@ test('connect', function (t) {
 })
 
 test('cleanup', function (t) {
-  wrtc.close()
+  if (wrtc) wrtc.close()
   t.end()
 })
