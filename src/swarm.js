@@ -32,11 +32,10 @@ class Swarm extends EventEmitter {
         webrtc: true
       }
     }
-    this.ready = false
-    this.error = this.error.bind(this)
+    this._error = this._error.bind(this)
   }
 
-  error (err) {
+  _error (err) {
     this.emit('error', err)
   }
 
@@ -57,19 +56,19 @@ class Swarm extends EventEmitter {
       })
     } else {
       peer.connect(this.networkId, (err, stream) => {
-        if (err) return this.error(err)
+        if (err) return this._error(err)
         this.emit('connect', stream, peer)
       })
     }
     if (this.allowIncoming) {
       peer.on('incoming', (relay) => {
         debug('adding incoming peer')
-        var incomingPeer = this.createPeer(relay, {
+        var incomingPeer = this._createPeer(relay, {
           incoming: true,
           relayed: true
         })
         incomingPeer.on('upgrade', (...args) =>
-          this.onUpgrade(incomingPeer, ...args))
+          this._onUpgrade(incomingPeer, ...args))
         this._addPeer(incomingPeer)
       })
     }
@@ -81,7 +80,7 @@ class Swarm extends EventEmitter {
       cb = opts
       opts = {}
     }
-    var peer = this.createPeer(stream, opts)
+    var peer = this._createPeer(stream, opts)
     if (cb) peer.once('error', cb)
     peer.onceReady(() => {
       if (cb) peer.removeListener('error', cb)
@@ -99,9 +98,9 @@ class Swarm extends EventEmitter {
     this.connect(stream, opts, cb)
   }
 
-  createPeer (stream, opts = {}) {
-    var networks = this.getNetworks()
-    var connectInfo = this.getConnectInfo()
+  _createPeer (stream, opts = {}) {
+    var networks = this._getNetworks()
+    var connectInfo = this._getConnectInfo()
     var peer = Peer(stream, networks, connectInfo, {
       allowIncoming: this.allowIncoming
     })
@@ -109,19 +108,19 @@ class Swarm extends EventEmitter {
     return peer
   }
 
-  getNetworks () {
-    return { [this.networkId]: this.getPeers.bind(this) }
+  _getNetworks () {
+    return { [this.networkId]: this._getPeers.bind(this) }
   }
 
-  getPeers (cb) {
+  _getPeers (cb) {
     cb(null, this.peers)
   }
 
-  getConnectInfo () {
+  _getConnectInfo () {
     return this.connectInfo
   }
 
-  onUpgrade (oldPeer, { transport, offer }, res) {
+  _onUpgrade (oldPeer, { transport, offer }, res) {
     if (transport !== 'webrtc') {
       let err = new Error('Peer requested upgrade via unknown transport: ' +
         `"${transport}"`)
@@ -134,7 +133,7 @@ class Swarm extends EventEmitter {
     rtcConn.once('signal', (answer) => {
       rtcConn.once('connect', () => {
         this.connect(rtcConn, { incoming: true }, (err) => {
-          if (err) return this.error(err)
+          if (err) return this._error(err)
           oldPeer.close()
         })
       })
@@ -142,7 +141,7 @@ class Swarm extends EventEmitter {
     })
   }
 
-  upgradePeer (oldPeer, cb) {
+  _upgradePeer (oldPeer, cb) {
     var rtcConn = new RTCPeer({
       wrtc: this.wrtc,
       trickle: false,
@@ -176,24 +175,24 @@ class Swarm extends EventEmitter {
       if (err) return cb(err)
       var candidate = candidates[floor(random() * candidates.length)]
       if (candidate.connectInfo.pxp) {
-        this.relayAndUpgrade(peer, candidate, cb)
+        this._relayAndUpgrade(peer, candidate, cb)
       } else {
-        this.relay(peer, candidate, cb)
+        this._relay(peer, candidate, cb)
       }
     })
   }
 
-  relayAndUpgrade (peer, dest, cb) {
+  _relayAndUpgrade (peer, dest, cb) {
     cb = once(cb)
     peer.relay(dest, (err, relay) => {
       if (err) return cb(err)
-      var relayPeer = this.createPeer(relay, { relayed: true })
+      var relayPeer = this._createPeer(relay, { relayed: true })
       relayPeer.once('error', cb)
-      this.upgradePeer(relayPeer, cb)
+      this._upgradePeer(relayPeer, cb)
     })
   }
 
-  relay (peer, dest, cb) {
+  _relay (peer, dest, cb) {
     peer.relay(dest, (err, relay) => {
       if (err) return cb(err)
       this.emit('connect', relay)
