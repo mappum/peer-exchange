@@ -336,3 +336,81 @@ test('disconnect', function (t) {
     t.end()
   })
 })
+
+test('getNewPeer', function (t) {
+  var swarm1 = Swarm('somenet', { wrtc: wrtc })
+  var swarm2 = Swarm('somenet', { wrtc: wrtc })
+  var swarm3 = Swarm('somenet', { wrtc: wrtc, acceptIncoming: true })
+
+  t.test('getNewPeer with no other peers', function (t) {
+    t.test('setup', function (t) {
+      t.plan(2)
+      var streams = createStreams()
+      swarm1.connect(streams[0], function (err, peer) {
+        t.error(err, 'no error')
+      })
+      swarm2.accept(streams[1], function (err, peer) {
+        t.error(err, 'no error')
+      })
+    })
+
+    t.test('getNewPeer', function (t) {
+      swarm1.getNewPeer(function (err, peer) {
+        t.pass('getNewPeer callback called')
+        t.ok(err, 'got error')
+        t.notOk(peer, 'no peer returned')
+        t.equal(err.message, 'Peer did not return any candidates', 'correct error message')
+        t.end()
+      })
+    })
+
+    t.end()
+  })
+
+  t.test('simple getNewPeer', function (t) {
+    t.test('setup', function (t) {
+      t.plan(2)
+      var streams = createStreams()
+      swarm3.connect(streams[0], function (err, peer) {
+        t.error(err, 'no error')
+      })
+      swarm2.accept(streams[1], function (err, peer) {
+        t.error(err, 'no error')
+      })
+    })
+    t.test('getNewPeer', function (t) {
+      t.plan(9)
+      swarm1.on('connect', function (stream) {
+        t.pass('swarm1 emitted "connect" event')
+        stream.write('foo')
+        stream.on('data', function (data) {
+          t.pass('got stream data')
+          t.equal(data.toString(), 'bar', 'correct data')
+        })
+      })
+      swarm3.on('connect', function (stream) {
+        t.pass('swarm2 emitted "connect" event')
+        stream.write('bar')
+        stream.on('data', function (data) {
+          t.pass('got stream data')
+          t.equal(data.toString(), 'foo', 'correct data')
+        })
+      })
+      swarm1.getNewPeer(function (err, peer) {
+        t.pass('getNewPeer callback called')
+        t.error(err, 'no error')
+        t.ok(peer, 'got peer object')
+      })
+    })
+    t.end()
+  })
+
+  t.test('cleanup', function (t) {
+    swarm1.close()
+    swarm2.close()
+    swarm3.close()
+    t.end()
+  })
+
+  t.end()
+})

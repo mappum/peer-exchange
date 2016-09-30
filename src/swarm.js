@@ -17,6 +17,7 @@ class Swarm extends EventEmitter {
     super()
     this.networkId = networkId
     this.peers = []
+    this.closed = false
     this.allowIncoming = opts.allowIncoming != null
       ? opts.allowIncoming : true
     this.wrtc = opts.wrtc || wrtc
@@ -76,6 +77,9 @@ class Swarm extends EventEmitter {
   }
 
   connect (stream, opts, cb) {
+    if (this.closed) {
+      return cb(new Error('Swarm is closed'))
+    }
     if (typeof opts === 'function') {
       cb = opts
       opts = {}
@@ -90,6 +94,9 @@ class Swarm extends EventEmitter {
   }
 
   accept (stream, opts = {}, cb) {
+    if (this.closed) {
+      return cb(new Error('Swarm is closed'))
+    }
     if (typeof opts === 'function') {
       cb = opts
       opts = {}
@@ -166,6 +173,9 @@ class Swarm extends EventEmitter {
   }
 
   getNewPeer (cb) {
+    if (this.closed) {
+      return cb(new Error('Swarm is closed'))
+    }
     if (this.peers.length === 0) {
       return cb(new Error('Not connected to any peers'))
     }
@@ -173,6 +183,9 @@ class Swarm extends EventEmitter {
     var peer = this.peers[floor(random() * this.peers.length)]
     peer.getPeers(this.networkId, (err, candidates) => {
       if (err) return cb(err)
+      if (candidates.length === 0) {
+        return cb(new Error('Peer did not return any candidates'))
+      }
       var candidate = candidates[floor(random() * candidates.length)]
       if (candidate.connectInfo.pxp) {
         this._relayAndUpgrade(peer, candidate, cb)
@@ -197,6 +210,11 @@ class Swarm extends EventEmitter {
       if (err) return cb(err)
       this.emit('connect', relay)
     })
+  }
+
+  close () {
+    this.closed = true
+    for (let peer of this.peers) peer.close()
   }
 }
 
