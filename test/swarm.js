@@ -2,8 +2,9 @@ var test = require('tape')
 var Swarm = require('../')
 var PassThrough = require('stream').PassThrough
 var dup = require('duplexify')
+var RTCPeer = require('simple-peer')
 if (!process.browser) {
-  var wrtc = require('electron-webrtc')()
+  var wrtc = require('wrtc')
 }
 
 function nodeTest (t, name, f) {
@@ -21,6 +22,19 @@ function createStreams () {
     dup(conn1, conn2),
     dup(conn2, conn1)
   ]
+}
+
+function createRTCStreams (cb) {
+  var peer1 = RTCPeer({ initiator: true, wrtc: wrtc })
+  var peer2 = RTCPeer({ wrtc: wrtc })
+  peer1.on('signal', (data) => peer2.signal(data))
+  peer2.on('signal', (data) => peer1.signal(data))
+  var maybeDone = () => {
+    if (!peer1.connected || !peer2.connected) return
+    cb(null, [ peer1, peer2 ])
+  }
+  peer1.on('connect', maybeDone)
+  peer2.on('connect', maybeDone)
 }
 
 test('create Swarm', function (t) {
@@ -116,6 +130,21 @@ test('connect', function (t) {
     })
   })
 
+  t.test('connect with incompatible networks', function (t) {
+    t.plan(4)
+    var swarm1 = Swarm('somenet', { wrtc: wrtc })
+    var swarm2 = Swarm('somenet2', { wrtc: wrtc })
+    var streams = createStreams()
+    swarm1.connect(streams[0], function (err, peer) {
+      t.ok(err, 'got error')
+      t.equal(err.message, 'Peer does not have any networks in common.', 'correct error message')
+    })
+    swarm2.connect(streams[1], { incoming: true }, function (err, peer) {
+      t.ok(err, 'got error')
+      t.equal(err.message, 'Peer does not have any networks in common.', 'correct error message')
+    })
+  })
+
   t.test('connect with 2 outgoing', function (t) {
     var swarm1 = Swarm('somenet', { wrtc: wrtc })
     var swarm2 = Swarm('somenet', { wrtc: wrtc })
@@ -130,7 +159,180 @@ test('connect', function (t) {
   })
 })
 
-test('cleanup', function (t) {
-  if (wrtc) wrtc.close()
-  t.end()
+test('accept', function (t) {
+  t.test('simple accept', function (t) {
+    t.plan(18)
+    var swarm1 = Swarm('somenet', { wrtc: wrtc })
+    var swarm2 = Swarm('somenet', { wrtc: wrtc })
+    var streams = createStreams()
+    swarm1.on('peer', function (peer) {
+      t.pass('got "peer" event from swarm1')
+      t.equal(swarm1.peers.length, 1, 'correct peers length')
+      t.equal(swarm1.peers[0], peer, 'correct peer object')
+    })
+    swarm2.on('peer', function (peer) {
+      t.pass('got "peer" event from swarm2')
+      t.equal(swarm2.peers.length, 1, 'correct peers length')
+      t.equal(swarm2.peers[0], peer, 'correct peer object')
+    })
+    swarm1.on('connect', function (stream) {
+      t.pass('received "connect" event from swarm1')
+      stream.write('123')
+      stream.once('data', function (data) {
+        t.pass('received stream data')
+        t.equal(data.toString(), '456', 'correct data')
+      })
+    })
+    swarm2.on('connect', function (stream) {
+      t.pass('received "connect" event from swarm2')
+      stream.write('456')
+      stream.once('data', function (data) {
+        t.pass('received stream data')
+        t.equal(data.toString(), '123', 'correct data')
+      })
+    })
+    swarm1.connect(streams[0], function (err, peer) {
+      t.pass('swarm1 connect callback called')
+      t.error(err, 'no error')
+      t.ok(peer, 'got peer object')
+    })
+    swarm2.accept(streams[1], function (err, peer) {
+      t.pass('swarm2 connect callback called')
+      t.error(err, 'no error')
+      t.ok(peer, 'got peer object')
+    })
+  })
+
+  t.test('accept with opts', function (t) {
+    t.plan(18)
+    var swarm1 = Swarm('somenet', { wrtc: wrtc })
+    var swarm2 = Swarm('somenet', { wrtc: wrtc })
+    var streams = createStreams()
+    swarm1.on('peer', function (peer) {
+      t.pass('got "peer" event from swarm1')
+      t.equal(swarm1.peers.length, 1, 'correct peers length')
+      t.equal(swarm1.peers[0], peer, 'correct peer object')
+    })
+    swarm2.on('peer', function (peer) {
+      t.pass('got "peer" event from swarm2')
+      t.equal(swarm2.peers.length, 1, 'correct peers length')
+      t.equal(swarm2.peers[0], peer, 'correct peer object')
+    })
+    swarm1.on('connect', function (stream) {
+      t.pass('received "connect" event from swarm1')
+      stream.write('123')
+      stream.once('data', function (data) {
+        t.pass('received stream data')
+        t.equal(data.toString(), '456', 'correct data')
+      })
+    })
+    swarm2.on('connect', function (stream) {
+      t.pass('received "connect" event from swarm2')
+      stream.write('456')
+      stream.once('data', function (data) {
+        t.pass('received stream data')
+        t.equal(data.toString(), '123', 'correct data')
+      })
+    })
+    swarm1.connect(streams[0], function (err, peer) {
+      t.pass('swarm1 connect callback called')
+      t.error(err, 'no error')
+      t.ok(peer, 'got peer object')
+    })
+    swarm2.accept(streams[1], { foo: true }, function (err, peer) {
+      t.pass('swarm2 connect callback called')
+      t.error(err, 'no error')
+      t.ok(peer, 'got peer object')
+    })
+  })
+})
+
+test('disconnect', function (t) {
+  t.test('end connection with peer.close()', function (t) {
+    var swarm1 = Swarm('somenet', { wrtc: wrtc })
+    var swarm2 = Swarm('somenet', { wrtc: wrtc })
+
+    t.test('setup', function (t) {
+      t.plan(10)
+      var streams = createStreams()
+      swarm1.on('peer', function (peer) {
+        t.pass('got "peer" event from swarm1')
+        t.equal(swarm1.peers.length, 1, 'correct peers length')
+        t.equal(swarm1.peers[0], peer, 'correct peer object')
+      })
+      swarm2.on('peer', function (peer) {
+        t.pass('got "peer" event from swarm2')
+        t.equal(swarm2.peers.length, 1, 'correct peers length')
+        t.equal(swarm2.peers[0], peer, 'correct peer object')
+      })
+      swarm1.connect(streams[0], function (err, peer) {
+        t.error(err, 'no error')
+        t.pass('swarm1 connect callback called')
+      })
+      swarm2.accept(streams[1], function (err, peer) {
+        t.error(err, 'no error')
+        t.pass('swarm2 connect callback called')
+      })
+    })
+
+    t.test('disconnect', function (t) {
+      t.plan(4)
+      swarm1.on('disconnect', function (peer) {
+        t.pass('got "disconnect" event from swarm1')
+        t.equal(swarm1.peers.length, 0, 'swarm1.peers is now empty')
+      })
+      swarm2.on('disconnect', function (peer) {
+        t.pass('got "disconnect" event from swarm2')
+        t.equal(swarm2.peers.length, 0, 'swarm2.peers is now empty')
+      })
+      swarm1.peers[0].close()
+    })
+
+    t.end()
+  })
+
+  t.test('end connection with socket.destroy()', function (t) {
+    var swarm1 = Swarm('somenet', { wrtc: wrtc })
+    var swarm2 = Swarm('somenet', { wrtc: wrtc })
+
+    t.test('setup', function (t) {
+      t.plan(11)
+      createRTCStreams(function (err, streams) {
+        t.error(err, 'no error')
+        swarm1.on('peer', function (peer) {
+          t.pass('got "peer" event from swarm1')
+          t.equal(swarm1.peers.length, 1, 'correct peers length')
+          t.equal(swarm1.peers[0], peer, 'correct peer object')
+        })
+        swarm2.on('peer', function (peer) {
+          t.pass('got "peer" event from swarm2')
+          t.equal(swarm2.peers.length, 1, 'correct peers length')
+          t.equal(swarm2.peers[0], peer, 'correct peer object')
+        })
+        swarm1.connect(streams[0], function (err, peer) {
+          t.error(err, 'no error')
+          t.pass('swarm1 connect callback called')
+        })
+        swarm2.accept(streams[1], function (err, peer) {
+          t.error(err, 'no error')
+          t.pass('swarm2 connect callback called')
+        })
+      })
+    })
+
+    t.test('disconnect', function (t) {
+      t.plan(4)
+      swarm1.on('disconnect', function (peer) {
+        t.pass('got "disconnect" event from swarm1')
+        t.equal(swarm1.peers.length, 0, 'swarm1.peers is now empty')
+      })
+      swarm2.on('disconnect', function (peer) {
+        t.pass('got "disconnect" event from swarm2')
+        t.equal(swarm2.peers.length, 0, 'swarm2.peers is now empty')
+      })
+      swarm1.peers[0].socket.destroy()
+    })
+
+    t.end()
+  })
 })

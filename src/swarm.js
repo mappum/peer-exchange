@@ -89,7 +89,7 @@ class Swarm extends EventEmitter {
     })
   }
 
-  accept (stream, opts, cb) {
+  accept (stream, opts = {}, cb) {
     if (typeof opts === 'function') {
       cb = opts
       opts = {}
