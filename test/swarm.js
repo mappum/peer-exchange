@@ -396,10 +396,10 @@ test('getNewPeer', function (t) {
           t.equal(data.toString(), 'foo', 'correct data')
         })
       })
-      swarm1.getNewPeer(function (err, peer) {
+      swarm1.getNewPeer(function (err, stream) {
         t.pass('getNewPeer callback called')
         t.error(err, 'no error')
-        t.ok(peer, 'got peer object')
+        t.ok(stream, 'got stream object')
       })
     })
     t.end()

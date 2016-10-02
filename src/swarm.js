@@ -179,6 +179,14 @@ class Swarm extends EventEmitter {
     if (this.peers.length === 0) {
       return cb(new Error('Not connected to any peers'))
     }
+    var getStream = (err, peer) => {
+      if (err) return cb(err)
+      console.log('getstream')
+      peer.once(`connect:${this.networkId}`, (stream) => {
+        console.log('connect event')
+        cb(null, stream)
+      })
+    }
     // TODO: smarter selection
     var peer = this.peers[floor(random() * this.peers.length)]
     peer.getPeers(this.networkId, (err, candidates) => {
@@ -188,9 +196,9 @@ class Swarm extends EventEmitter {
       }
       var candidate = candidates[floor(random() * candidates.length)]
       if (candidate.connectInfo.pxp) {
-        this._relayAndUpgrade(peer, candidate, cb)
+        this._relayAndUpgrade(peer, candidate, getStream)
       } else {
-        this._relay(peer, candidate, cb)
+        this._relay(peer, candidate, getStream)
       }
     })
   }
