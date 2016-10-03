@@ -26,6 +26,7 @@ class Swarm extends EventEmitter {
         ' as the "wrtc" option (for example, the "wrtc" or ' +
         '"electron-webrtc" packages).')
     }
+    if (opts.getPeers) this._getPeers = opts.getPeers
     if (this.allowIncoming) {
       this.connectInfo = {
         pxp: true,
@@ -120,6 +121,7 @@ class Swarm extends EventEmitter {
   }
 
   _getPeers (cb) {
+    // TODO: limit to random selection
     cb(null, this.peers)
   }
 
@@ -179,14 +181,6 @@ class Swarm extends EventEmitter {
     if (this.peers.length === 0) {
       return cb(new Error('Not connected to any peers'))
     }
-    var getStream = (err, peer) => {
-      if (err) return cb(err)
-      console.log('getstream')
-      peer.once(`connect:${this.networkId}`, (stream) => {
-        console.log('connect event')
-        cb(null, stream)
-      })
-    }
     // TODO: smarter selection
     var peer = this.peers[floor(random() * this.peers.length)]
     peer.getPeers(this.networkId, (err, candidates) => {
@@ -196,9 +190,14 @@ class Swarm extends EventEmitter {
       }
       var candidate = candidates[floor(random() * candidates.length)]
       if (candidate.connectInfo.pxp) {
-        this._relayAndUpgrade(peer, candidate, getStream)
+        this._relayAndUpgrade(peer, candidate, (err, peer) => {
+          if (err) return cb(err)
+          peer.once(`connect:${this.networkId}`, (stream) => {
+            cb(null, stream)
+          })
+        })
       } else {
-        this._relay(peer, candidate, getStream)
+        this._relay(peer, candidate, cb)
       }
     })
   }
@@ -217,6 +216,7 @@ class Swarm extends EventEmitter {
     peer.relay(dest, (err, relay) => {
       if (err) return cb(err)
       this.emit('connect', relay)
+      return cb(null, relay)
     })
   }
 
