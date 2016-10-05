@@ -16,7 +16,7 @@ class Swarm extends EventEmitter {
     }
     super()
     this.networkId = networkId
-    this.peers = []
+    this._peers = []
     this.closed = false
     this.allowIncoming = opts.allowIncoming != null
       ? opts.allowIncoming : true
@@ -42,12 +42,12 @@ class Swarm extends EventEmitter {
   }
 
   _addPeer (peer) {
-    this.peers.push(peer)
+    this._peers.push(peer)
     onObject(peer).once({
       disconnect: () => {
-        var index = this.peers.indexOf(peer)
+        var index = this._peers.indexOf(peer)
         if (index === -1) return
-        this.peers.splice(index, 1)
+        this._peers.splice(index, 1)
         this.emit('disconnect', peer)
       },
       error: (err) => this.emit('peerError', err, peer)
@@ -90,7 +90,11 @@ class Swarm extends EventEmitter {
     peer.onceReady(() => {
       if (cb) peer.removeListener('error', cb)
       this._addPeer(peer)
-      if (cb) cb(null, peer)
+      if (!cb) return
+      peer.once(`connect:${this.networkId}`, (conn) => {
+        conn.pxpPeer = peer
+        cb(null, conn)
+      })
     })
   }
 
@@ -122,7 +126,7 @@ class Swarm extends EventEmitter {
 
   _getPeers (cb) {
     // TODO: limit to random selection
-    cb(null, this.peers)
+    cb(null, this._peers)
   }
 
   _getConnectInfo () {
@@ -175,14 +179,15 @@ class Swarm extends EventEmitter {
   }
 
   getNewPeer (cb) {
+    cb = cb || ((err) => { if (err) this._error(err) })
     if (this.closed) {
       return cb(new Error('Swarm is closed'))
     }
-    if (this.peers.length === 0) {
+    if (this._peers.length === 0) {
       return cb(new Error('Not connected to any peers'))
     }
     // TODO: smarter selection
-    var peer = this.peers[floor(random() * this.peers.length)]
+    var peer = this._peers[floor(random() * this._peers.length)]
     peer.getPeers(this.networkId, (err, candidates) => {
       if (err) return cb(err)
       if (candidates.length === 0) {
@@ -190,12 +195,7 @@ class Swarm extends EventEmitter {
       }
       var candidate = candidates[floor(random() * candidates.length)]
       if (candidate.connectInfo.pxp) {
-        this._relayAndUpgrade(peer, candidate, (err, peer) => {
-          if (err) return cb(err)
-          peer.once(`connect:${this.networkId}`, (stream) => {
-            cb(null, stream)
-          })
-        })
+        this._relayAndUpgrade(peer, candidate, cb)
       } else {
         this._relay(peer, candidate, cb)
       }
@@ -222,7 +222,11 @@ class Swarm extends EventEmitter {
 
   close () {
     this.closed = true
-    for (let peer of this.peers) peer.close()
+    for (let peer of this._peers) peer.close()
+  }
+
+  get peers () {
+    return this._peers.slice(0)
   }
 }
 
