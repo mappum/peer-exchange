@@ -27,9 +27,9 @@ function createStreams () {
 function createRTCStreams (cb) {
   var peer1 = RTCPeer({ initiator: true, wrtc: wrtc })
   var peer2 = RTCPeer({ wrtc: wrtc })
-  peer1.on('signal', (data) => peer2.signal(data))
-  peer2.on('signal', (data) => peer1.signal(data))
-  var maybeDone = () => {
+  peer1.on('signal', function (data) { peer2.signal(data) })
+  peer2.on('signal', function (data) { peer1.signal(data) })
+  var maybeDone = function () {
     if (!peer1.connected || !peer2.connected) return
     cb(null, [ peer1, peer2 ])
   }
