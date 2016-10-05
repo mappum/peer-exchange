@@ -6,7 +6,9 @@
 
 **Decentralized peer discovery and signaling**
 
-`peer-exchange` is a decentralized protocol for peer exchange and signaling. It reduces dependency on centralized peer exchange hubs, which may be useful in some applications.
+`peer-exchange` is a client for the Peer Exchange Protocol (PXP), a decentralized protocol for peer discovery and signaling. Rather than using centralized signal hubs, each node in the network exchanges peers and relays signaling data.
+
+This client uses WebRTC for peer connections, but you may also use any other transport by manually connecting and passing in a duplex stream.
 
 ## Usage
 
@@ -15,29 +17,28 @@
 ```js
 var Exchange = require('peer-exchange')
 
-var ex = new Exchange('some-network-id') // pick some ID for your network
+var ex = new Exchange('some-network-id', { wrtc: wrtc })
+// The network id can be any string unique to your network.
+// When using Node.js, the `wrtc` option is required.
+// (This can come from the 'wrtc' or 'electron-webrtc' packages).
 
-// optionally specify you want to accept incoming connections
-ex.accept('websocket', { port: 8000 })
-ex.accept('tcp', { port: 8001 })
-ex.accept('webrtc')
+ex.on('connect', (conn) => {
+  // `conn` is a duplex stream multiplexed through the PXP connection,
+  // which can be used for your P2P protocol.
+  conn.pipe(something).pipe(conn)
 
-ex.on('peer', (peer) => {
-  console.log('connected to peer:', peer.socket.transport, peer.remoteAddress)
+  // We can query our current peers for a new peer by calling `getNewPeer()`.
+  // `peer-exchange` will do the WebRTC signaling and connect to the peer.
+  if (ex.peers.length < 8) ex.getNewPeer()
 })
 
-// bootstrap by connecting to a few already-known initial peers
-ex.connect('websocket', '10.0.0.1', { port: 8000 }, (err, peer) => { ... })
-ex.connect('tcp', '10.0.0.2', { port: 8000 }, (err, peer) => {
-  // `peer` is a duplex stream
+// Bootstrap by connecting to one or more already-known PXP peers.
+// You can use any transport that creates a duplex stream (in this case TCP).
+var socket = net.connect(8000, '10.0.0.1', () => ex.connect(socket))
 
-  // now that we're connected, we can request more peers from our current peers.
-  // this selects a peer at random and queries it for a new peer:
-  ex.getNewPeer((err, peer) => {
-    console.log('a random peer sent us a new peer:', peer.socket.transport, peer.remoteAddress)
-    // `peer` is a duplex stream
-  })
-})
+// You can optionally accept incoming connections using any transport.
+var server = net.createServer((socket) => ex.accept(socket))
+server.listen(8000)
 ```
 
 ### API
@@ -57,55 +58,38 @@ Creates a new exchange, which is used to manage connections to peers in a P2P ne
 
 `networkId` should be a string unique to the network. Nodes can only peer with other nodes that use the same ID. If you need to participate in multiple networks, create multiple `Exchange` instances with different IDs.
 
-`opts` can contain the following properties:
+`opts` should contain the following properties:
  - `wrtc`, *Object* - A WebRTC implementation for Node.js clients (e.g. [`wrtc`](https://github.com/js-platform/node-webrtc) or [`electron-webrtc`](https://github.com/mappum/electron-webrtc)). In browsers, the built-in implementation is used by default.
- - `transports`, *Object* - Manually specify connection transport interfaces. By default, the available transports are `websocket`, `tcp` (if in Node.js), and `webrtc` (if `wrtc` opt is supplied or if in browser). The built-in transports are exposed as `require('peer-exchange').transports`.
 
 ----
-#### `ex.connect(transport, host, opts, [callback])`
+#### `ex.connect(socket, [callback])`
 
-Manually connects to a peer. This is necessary to bootstrap our exchange with initial peers which we can query for additional peers.
+Manually adds a peer. This is necessary to bootstrap our exchange with initial peers which we can query for additional peers. This method is for *outgoing* connections, for *incoming* connections use `accept`.
 
-`transport` should be a string that specifies the name of the transport to connect with (e.g. `'websocket'` or `'tcp'`).
+`socket` should be a duplex stream that represents a connection to a peer which implements the Peer Exchange Protocol.
 
-`host` is the network address of the remote peer.
+`callback` will be called with `callback(err, connection)`, where `connection` is a duplex stream which may be used by your application for your P2P protocol.
 
-`opts` is an object containing transport options (e.g. `{ port: 8000 }`).
+----
+#### `ex.accept(socket, [callback])`
 
-`callback` will be called with
-`callback(err, peer)`.
+Similar to `connect`, but used with *incoming* peer connections.
 
 ----
 #### `ex.getNewPeer([callback])`
 
-Randomly selects a peer we are connected to, and queries it for a new peer. A connection will be made with the new peer, using the already-connected peer as a relay (for signaling, NAT traversal, etc.).
+Queries out current peers for a new peer, then connects to it via WebRTC. The already-connected peer will act as a relay for signaling.
 
-This will error if our exchange is not yet connected to any peers.
+The `'connect'` event will be emitted once the connection is established.
 
-`callback` will be called with `callback(err, peer)`.
+This will error if our exchange is not connected to any peers.
 
-----
-#### `ex.accept(transport, opts, [callback])`
-
-Begins accepting incoming peer connections on a transport.
-
-`transport` should be a string that specifies the name of the transport to accept connections with (e.g. `'websocket'`, `'webrtc'`, or `'tcp'`).
-
-`opts` is an object containing transport options (e.g. `{ port: 8000 }`).
-
-`callback` is called with `callback(err)` when the exchange is ready to accept incoming connections (or when an error occurs during setup).
-
-----
-#### `ex.unaccept(transport)`
-
-Stops accepting incoming peer connections on a transport.
-
-`transport` should be a string that specifies the name of the transport to accept connections with (e.g. `'websocket'`, `'webrtc'`, or `'tcp'`).
+`callback` will be called with `callback(err, connection)`.
 
 ----
 #### `ex.close([callback])`
 
-Closes all peer connections in the exchange and stops accepting incoming connections.
+Closes all peer connections in the exchange and prevents adding any new connections.
 
 `callback` is called with `callback(err)` when the exchange is closed (or when an error occurs).
 
@@ -115,9 +99,9 @@ Closes all peer connections in the exchange and stops accepting incoming connect
 
 #### `ex.peers`
 
-An array of connected peers. Useful for iterating through peers or getting the number of connections, but mutating this array will cause undefined behavior.
+An array of connected peers. Useful for iterating through peers or getting the number of connections.
 
-#### `ex.id`
+#### `ex.networkId`
 
 The network ID provided in the constructor.
 
@@ -125,7 +109,7 @@ The network ID provided in the constructor.
 
 #### Events
 
-#### `ex.on('peer', function (peer) { ... })`
+#### `ex.on('connect', function (conn) { ... })`
 
 Emitted whenever a new peer connection is established (both incoming and outgoing).
 
@@ -135,66 +119,14 @@ Emitted when an error occurs.
 
 ----
 
-## Peer
-
-`Peer` objects are returned by `Exchange#connect()`, `Exchange#getNewPeer()`, and `Exchange#on('peer')`.
-
-`Peer` is a duplex stream, which streams data over the transport to/from the remote peer.
-
-### Methods
-
-#### `peer.getNewPeer([callback])`
-
-Queries this peer for a new peer. A connection will be made with the new peer, using the already-connected peer as a relay (for signaling, NAT traversal, etc.).
-
-`callback` will be called with `callback(err, peer)`.
-
-----
-#### `peer.destroy()`
-
-Closes this peer connection and frees its resources.
-
-----
-#### Properties
-
-#### `peer.socket`
-
-The transport DuplexStream for this peer connection.
-
-#### `peer.socket.transport`
-
-A string containing the name of the transport this connection is using.
-
-#### `peer.remoteAddress`
-
-A string containing the network address of the remote peer.
-
-----
-#### Events
-
-#### `ex.on('close', function () { ... })`
-
-Emitted when the connection closes.
-
-#### `ex.on('error', function (err) { ... })`
-
-Emitted when an error occurs.
-
-----
-## Transport Interface
-
-**TODO**
-
-(See `src/transports.js` for now)
-
 ## Security Notes
 
 Some efforts were made to make this module DoS-resistant, but there are probably still some weaknesses.
 
-It is recommended to use an authenticated transport (e.g. 'wss') for initial nodes to prevent MITM (attackers would be able to control all your peers, which can be very bad in some applications).
+It is recommended to use an authenticated transport when possible (e.g. WebSockets over HTTPS) for initial bootstrapping to prevent man-in-the-middle attacks (attackers could control all the peers you connect to, which can be very bad in some applications).
 
 ## Comparison with `signalhub`
 
 This module provides functionality similar to [`signalhub`](https://github.com/mafintosh/signalhub), where P2P nodes can get addresses of new peers and establish connections by relaying signaling data. However, this module differs by getting all nodes to provide this "hub" service, rather than a few centralized servers. It also only exchanges currently-connected peer addresses rather than providing general-purpose broadcasting.
 
-Note that `signalhub` may be better suited for some applications, for instance when connecting to peers in small swarms when no peer addresses are initially known (e.g. torrent swarms). In the future, a DHT could help with finding initial peers for this sort of use case.
+Note that `signalhub` may be better suited for some applications, for instance when connecting to peers in small swarms when no peer addresses are initially known (e.g. BitTorrent swarms). In the future, a DHT could help with finding initial peers for this sort of use case.
