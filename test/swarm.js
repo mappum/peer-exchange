@@ -34,10 +34,14 @@ var rtcConfig = {
       urls: 'stun:23.21.150.121'
     }, {
       url: 'turn:104.236.185.38:3478?transport=tcp',
-      urls: 'turn:104.236.185.38:3478?transport=tcp'
+      urls: 'turn:104.236.185.38:3478?transport=tcp',
+      username: 'HDCqbgHNTxpbwwdDXlip',
+      credential: 'Ll0IWHrGsqtLSxjvIFMi'
     }, {
       url: 'turn:104.236.185.38:3478?transport=udp',
-      urls: 'turn:104.236.185.38:3478?transport=udp'
+      urls: 'turn:104.236.185.38:3478?transport=udp',
+      username: 'HDCqbgHNTxpbwwdDXlip',
+      credential: 'Ll0IWHrGsqtLSxjvIFMi'
     }
   ]
 }
