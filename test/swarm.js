@@ -27,9 +27,24 @@ function createStreams () {
   ]
 }
 
+var rtcConfig = {
+  iceServers: [
+    {
+      url: 'stun:23.21.150.121',
+      urls: 'stun:23.21.150.121'
+    }, {
+      url: 'turn:104.236.185.38:3478?transport=tcp',
+      urls: 'turn:104.236.185.38:3478?transport=tcp'
+    }, {
+      url: 'turn:104.236.185.38:3478?transport=udp',
+      urls: 'turn:104.236.185.38:3478?transport=udp'
+    }
+  ]
+}
+
 function createRTCStreams (cb) {
-  var peer1 = RTCPeer({ initiator: true, wrtc: wrtc })
-  var peer2 = RTCPeer({ wrtc: wrtc })
+  var peer1 = RTCPeer({ initiator: true, wrtc: wrtc, config: rtcConfig })
+  var peer2 = RTCPeer({ wrtc: wrtc, config: rtcConfig })
   peer1.on('signal', function (data) { peer2.signal(data) })
   peer2.on('signal', function (data) { peer1.signal(data) })
   var maybeDone = function () {
