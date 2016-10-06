@@ -26,6 +26,7 @@ class Swarm extends EventEmitter {
         ' as the "wrtc" option (for example, the "wrtc" or ' +
         '"electron-webrtc" packages).')
     }
+    this.rtcConfig = opts.rtcConfig
     if (opts.getPeers) this._getPeers = opts.getPeers
     if (this.allowIncoming) {
       this.connectInfo = {
@@ -139,7 +140,7 @@ class Swarm extends EventEmitter {
       return oldPeer.error(err)
     }
     debug(`upgrading peer: ${transport}`)
-    var rtcConn = new RTCPeer({ wrtc: this.wrtc })
+    var rtcConn = new RTCPeer({ wrtc: this.wrtc, config: this.rtcConfig })
     this._signalRTC(oldPeer, rtcConn, () => {
       this.accept(rtcConn, (err) => {
         if (err) return this._error(err)
@@ -152,7 +153,8 @@ class Swarm extends EventEmitter {
   _upgradePeer (oldPeer, cb) {
     var rtcConn = new RTCPeer({
       wrtc: this.wrtc,
-      initiator: true
+      initiator: true,
+      config: this.rtcConfig
     })
     this._signalRTC(oldPeer, rtcConn, (err) => {
       if (err) return cb(err)
