@@ -69,7 +69,7 @@ class Swarm extends EventEmitter {
           incoming: true,
           relayed: true
         })
-        incomingPeer.on('upgrade', (...args) =>
+        incomingPeer.once('upgrade', (...args) =>
           this._onUpgrade(incomingPeer, ...args))
         this._addPeer(incomingPeer)
       })
@@ -90,10 +90,9 @@ class Swarm extends EventEmitter {
     peer.onceReady(() => {
       if (cb) peer.removeListener('error', cb)
       this._addPeer(peer)
-      if (!cb) return
       peer.once(`connect:${this.networkId}`, (conn) => {
         conn.pxpPeer = peer
-        cb(null, conn)
+        if (cb) cb(null, conn)
       })
     })
   }
@@ -133,48 +132,47 @@ class Swarm extends EventEmitter {
     return this.connectInfo
   }
 
-  _onUpgrade (oldPeer, { transport, offer }, res) {
+  _onUpgrade (oldPeer, { transport, signal }) {
     if (transport !== 'webrtc') {
       let err = new Error('Peer requested upgrade via unknown transport: ' +
         `"${transport}"`)
-      res(err.message)
       return oldPeer.error(err)
     }
     debug(`upgrading peer: ${transport}`)
-    var rtcConn = new RTCPeer({ wrtc: this.wrtc, trickle: false })
-    rtcConn.signal(offer)
-    rtcConn.once('signal', (answer) => {
-      rtcConn.once('connect', () => {
-        this.connect(rtcConn, { incoming: true }, (err) => {
-          if (err) return this._error(err)
-          oldPeer.close()
-        })
+    var rtcConn = new RTCPeer({ wrtc: this.wrtc })
+    this._signalRTC(oldPeer, rtcConn, () => {
+      this.accept(rtcConn, (err) => {
+        if (err) return this._error(err)
+        oldPeer.close()
       })
-      res(null, answer)
     })
+    rtcConn.signal(signal)
   }
 
   _upgradePeer (oldPeer, cb) {
     var rtcConn = new RTCPeer({
       wrtc: this.wrtc,
-      trickle: false,
       initiator: true
     })
-    rtcConn.once('signal', (offer) => {
-      rtcConn.once('connect', () => {
-        this.connect(rtcConn, (err, newPeer) => {
-          if (err) return cb(err)
-          oldPeer.close()
-          cb(null, newPeer)
-        })
-      })
-      oldPeer.upgrade({
-        transport: 'webrtc',
-        offer
-      }, (err, answer) => {
+    this._signalRTC(oldPeer, rtcConn, (err) => {
+      if (err) return cb(err)
+      this.connect(rtcConn, (err, newPeer) => {
         if (err) return cb(err)
-        rtcConn.signal(answer)
+        oldPeer.close()
+        cb(null, newPeer)
       })
+    })
+  }
+
+  _signalRTC (peer, conn, cb) {
+    cb = once(cb)
+    conn.once('connect', () => cb(null))
+    conn.once('error', (err) => cb(err))
+    peer.on('upgrade', ({ signal }) => {
+      conn.signal(signal)
+    })
+    conn.on('signal', (signal) => {
+      peer.upgrade({ transport: 'webrtc', signal })
     })
   }
 
