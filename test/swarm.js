@@ -360,9 +360,9 @@ test('disconnect', function (t) {
 })
 
 test('getNewPeer', function (t) {
-  var swarm1 = Swarm('somenet', { wrtc: wrtc })
-  var swarm2 = Swarm('somenet', { wrtc: wrtc })
-  var swarm3 = Swarm('somenet', { wrtc: wrtc, acceptIncoming: true })
+  var swarm1 = Swarm('somenet', { wrtc: wrtc, rtcConfig: rtcConfig })
+  var swarm2 = Swarm('somenet', { wrtc: wrtc, rtcConfig: rtcConfig })
+  var swarm3 = Swarm('somenet', { wrtc: wrtc, rtcConfig: rtcConfig, acceptIncoming: true })
 
   t.test('getNewPeer with no other peers', function (t) {
     t.test('setup', function (t) {
