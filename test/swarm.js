@@ -5,6 +5,9 @@ var dup = require('duplexify')
 var RTCPeer = require('simple-peer')
 if (!process.browser) {
   var wrtc = require('wrtc')
+} else if (!window.localStorage.debug) {
+  window.localStorage.debug = '*'
+  window.location.reload()
 }
 
 function nodeTest (t, name, f) {
