@@ -39,7 +39,7 @@
     "electron-webrtc": "^0.2.4",
     "faucet": "0.0.1",
     "nyc": "^6.4.4",
-    "standard": "^7.1.0",
+    "standard": "^8.4.0",
     "tape": "^4.5.1",
     "zuul": "^3.10.1",
     "zuul-ngrok": "^4.0.0"
