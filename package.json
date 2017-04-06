@@ -48,7 +48,7 @@
     "dependency-check": "^2.6.0",
     "faucet": "0.0.1",
     "nyc": "^6.4.4",
-    "standard": "^8.2.0",
+    "standard": "^10.0.1",
     "tape": "^4.5.1",
     "wrtc": "0.0.61",
     "zuul": "^3.10.1",
