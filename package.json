@@ -40,7 +40,7 @@
     "pxp": "^1.0.0",
     "simple-peer": "^6.0.1",
     "through2": "^2.0.1",
-    "websocket-stream": "^3.1.0"
+    "websocket-stream": "^4.0.0"
   },
   "devDependencies": {
     "babel-cli": "^6.5.1",
