@@ -24,7 +24,7 @@
   "author": "Matt Bell <mappum@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "debug": "^2.2.0",
+    "debug": "^2.6.7",
     "duplexify": "^3.4.5",
     "get-browser-rtc": "^1.0.2",
     "hat": "0.0.3",
